@@ -1,0 +1,46 @@
+- user: username, name, age, bio, profile picture, last online, account created date, is online
+
+- room: name, room type (personal, group, channel).
+-- personal: add person by name, delete chat, send messages, images
+-- group: unique group name, add picture, add people by name, mute people (owner), kick people by name (owner), delete group (owner),
+    send messages, images, leave group, description
+-- channel: unique channel name, add picture, add people by name, kick people by name (owner), delete channel (owner),
+    send messages images (owner), leave channel, description
+
+extra:
+-- group: give people ranks by owner or admin. Ranks:  Owner, Admin, and custom ranks (e.g. "Teacher" rank)
+-- channel: comments to messages, images
+
+
+
+
+2026, 21 day, Avgust (8)
+
+Bugun qilgan narsalarim:
+
+GET /get-room-messages/{page}/{name}/{room_name}
+- room_name va name-ni qaysi roomni message va kim olmoqchi bolganini korish uchun.
+-- agar name ni olmasak user xohlagan room_name ni yozib korsa boladi shunda name kiritsa user-ning
+rooms field dida bor ekanligini tekshirdim (room_name qaysi room-ligini topish uchun).
+
+- page-ni 100 ga kopaytiradi, va 100 ta limit boladi (shunda user 0 kiritsa, 0 dan 100 gacha hamma messagelarni ob keladi,
+1 kiritsa 1*100=100 shunda 100 skip bolib 100 dan 200 gacha boladi. Yoki page-ni boshini 1 dan boshlaydigan qilsam ham boladi).
+
+Qilgan Testlarim:
+
+✅ - Tested and worked
+❌ - Tested and didnt work
+⚒️ - Tested, didnt work and working on it
+🤔 - Tested, didnt work and dont know how to fix it
+
+⚒️✅ - Tested didnt work, worked on it then Tested and worked
+
+Test Project:
+- Channelni faqat owner message tashashi,             ⚒️✅
+- ismlarni unique-ligini teksherish                   ⚒️✅
+- hamma room type-larda message to'g'ri joyga va online bolganlarga borishi                                                                       ✅
+- hamma room type-da join togri ishlashi (qoshilayotgan userning rooms ga qoshilish kerak, qoshilayotgan roomning members oshish kerak ...)       ✅
+- har qanday bug-lar chiqib qolsa togirlash -- Xali chiqmadi
+- databasa da hamma narsa oz joyiga va togri borishi  ✅
+- private roomlarni yaxshilab test qilish             ✅
+- user-lar "mixed-up" bolmasligi                      ✅  
