@@ -64,10 +64,11 @@ def create_group_room(
 
         all_members = []
         for member_id in room.members:
-            user_exists = users_collection.find_one({ "_id": ObjectId(member_id)})
+            member_id = ObjectId(member_id)
+            user_exists = users_collection.find_one({ "_id": member_id })
 
             if not user_exists:
-                raise HTTPException(status_code=403, detail=f"Invalid id '{member_id}'")
+                raise HTTPException(status_code=403, detail=f"Invalid id '{str(member_id)}'")
 
             all_members.append(member_id)
 
@@ -80,10 +81,48 @@ def create_group_room(
         }
 
         room_id = groups_collection.insert_one(new_room).inserted_id
+        for member in all_members:
+            users_collection.update_one({ "_id": member }, { "$push": { "joined_rooms": room_id } })
+
         return {'room_id': str(room_id)}
     except bson.errors.InvalidId:
         raise HTTPException(status_code=403, detail="invalid id")
 
+
+@router.post("/join/room/{room_id}")
+def join_room(
+    room_id: str,
+    user_id: str
+):
+    try:
+        room_id = ObjectId(room_id)
+        user_id = ObjectId(user_id)
+    except bson.errors.InvalidId:
+        raise HTTPException(status_code=403, detail="invalid id")
+
+    user = users_collection.find_one({ "_id": user_id })
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    room = privates_collection.find_one({ "_id": room_id })
+    room_type = "private"
+    if not room:
+        room = groups_collection.find_one({ "_id": room_id })
+        room_type = "group"
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    for user_room in user['joined_rooms']:
+        if user_room == room['_id']:
+            raise HTTPException(status_code=403, detail="User already joined")
+
+    users_collection.update_one({ "_id": user_id }, { "$push": { "joined_rooms": room_id } })
+    if room_type == "private":
+        privates_collection.update_one({ "_id": room_id }, { "$push": { "members": user_id } })
+    else:
+        groups_collection.update_one({ "_id": room_id }, { "$push": { "members": user_id } })
+
+    return {'message': 'Joined successfuly'}
 
 class ConnectionManager:
     def __init__(self):      # { room_id: { WebSocket: user_id, ... } }
@@ -114,7 +153,6 @@ class ConnectionManager:
 
         for connection in connections:
             await connection.send_json(message)
-
 
     async def disconnect(self, websocket, room_id):
         self.active_connections[room_id].pop(websocket)
@@ -166,8 +204,8 @@ async def websocket(
             data = await websocket.receive_text()
 
             message = {
-                "room_id": room_id,
-                "sender_id": user_id,
+                "room_id": ObjectId(room_id),
+                "sender_id": ObjectId(user_id),
                 "data": data,
                 "created_at": dt.now(timezone.utc).isoformat()
             }
@@ -175,8 +213,12 @@ async def websocket(
             result = messages_collection.insert_one(message)
 
             message['_id'] = str(result.inserted_id)
+            message['room_id'] = str(message['room_id'])
+            message['sender_id'] = str(message['sender_id'])
 
             await manager.broadcast_to_room(message)
 
     except WebSocketDisconnect:
+        manager.disconnect(websocket, room_id)
+    except bson.errors.InvalidId:
         manager.disconnect(websocket, room_id)
