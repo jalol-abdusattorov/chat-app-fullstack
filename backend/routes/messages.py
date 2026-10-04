@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from db import messages_collection, users_collection, privates_collection, groups_collection
 
 
+invalid_id_exception = HTTPException(status_code=403, detail="invalid id")
 router = APIRouter()
 
 @router.get("/room/{room_id}/messages")
@@ -18,7 +19,7 @@ def get_room_messages(
         room_id = ObjectId(room_id)
         user_id = ObjectId(user_id)
     except bson.errors.InvalidId:
-        raise HTTPException(status_code=403, detail="invalid id")
+        raise invalid_id_exception
 
     user = users_collection.find_one({ "_id": user_id })
     if room_type == 'private':
@@ -47,7 +48,7 @@ def get_room_messages(
     skipping_val = (page - 1) * 100
     limit = 100
 
-    messages = messages_collection.find({ "room_id": room_id }).skip(skipping_val).limit(limit).to_list(100)
+    messages = messages_collection.find({ "room_id": room_id },  { "created_at": -1 }).skip(skipping_val).limit(limit).to_list(100)
 
     if not messages:
         return {'message': "Chat/Page is empty"}
