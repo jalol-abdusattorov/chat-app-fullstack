@@ -1,16 +1,22 @@
 import bson
+from typing import Annotated
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException
-from datetime import datetime as dt, timezone
+from fastapi import APIRouter, Depends, HTTPException, Request
+from datetime import datetime as dt, timedelta, timezone
 
+from auth.utils.auth_utils import get_password_hash
+from auth.services.auth_service import create_access_token
+from auth.models.token import Token
 from models import UsersRequest
 from db import users_collection, privates_collection, groups_collection, messages_collection
+from routes.route_utils import check_owner, swagger_bearer_scheme
 
 
 invalid_id_exception = HTTPException(status_code=403, detail="invalid id")
 router = APIRouter()
 
-@router.post('/users/register')
+# NO AUTH
+@router.post('/users')
 def create_account(
     user: UsersRequest
 ):
@@ -25,7 +31,7 @@ def create_account(
         "username": user.username,
         "email": user.email,
         "bio": user.bio,
-        "password_hash": user.password,
+        "password_hash": get_password_hash(user.password),
         "created_at": dt.now(timezone.utc),
         # ["6ab2...", "6ab3mc.."]
         "joined_rooms": []
@@ -33,11 +39,22 @@ def create_account(
 
     inserted_id = users_collection.insert_one(new_user).inserted_id
 
-    return {'user_id': str(inserted_id)}
+    access_token_expires = timedelta(minutes=1440)
+    access_token = create_access_token(
+        data={'sub': new_user['email'], 'uid': str(inserted_id)},
+        expires_delta=access_token_expires
+    )
+
+    return {'user_id': str(inserted_id), 'token': Token(access_token=access_token, token_type='bearer')}
 
 
+# AUTHOIRZED
 @router.get('/users/{user_id}')
-def get_user(user_id: str):
+def get_user(
+    user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
+):
     try:
         user_id = ObjectId(user_id)
     except bson.errors.InvalidId:
@@ -55,11 +72,15 @@ def get_user(user_id: str):
     return user
 
 
+# AUTHOIRZED AND OWNER CHECK
 @router.delete('/users/leave-private/{room_id}')
 def leave_private_chat(
     room_id: str,
-    user_id: str
+    user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
+    check_owner(request, user_id)
     try:
         room_id = ObjectId(room_id)
         user_id = ObjectId(user_id)
@@ -86,11 +107,16 @@ def leave_private_chat(
     except bson.errors.InvalidId:
         raise invalid_id_exception
 
+
+# AUTHOIRZED AND OWNER CHECK
 @router.delete('/users/leave-group/{room_id}')
 def leave_group_chat(
     room_id: str,
-    user_id: str
+    user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
+    check_owner(request, user_id)
     try:
         room_id = ObjectId(room_id)
         user_id = ObjectId(user_id)

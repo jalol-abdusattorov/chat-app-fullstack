@@ -12,7 +12,7 @@ class RoomRequest(BaseModel):
     name: str
     description: str | None = None
     members: list[str]
-    
+
 
 class AddUsersRequest(BaseModel):
     users: list[str]

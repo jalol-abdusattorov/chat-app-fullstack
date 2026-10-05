@@ -1,19 +1,46 @@
+from typing import Annotated
+
 import bson
 from bson import ObjectId
 from datetime import datetime as dt, timezone
-from fastapi import APIRouter, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, status, WebSocket, WebSocketDisconnect
 
 from models import AddUsersRequest, RemoveUsersRequest, RoomRequest
 from db import users_collection, privates_collection, groups_collection, messages_collection
+from routes.route_utils import swagger_bearer_scheme, check_owner
 
 invalid_id_exception = HTTPException(status_code=403, detail="invalid id")
 router = APIRouter()
 
+def is_user_in_room(user_id: str, room_id: str):
+    connections = manager.active_connections.get(str(room_id))
+    if connections:
+        for i in connections.values():
+            if i == user_id:
+                return True
+
+    return False
+
+
+def get_online_users(room_id: str):
+    active_users = []
+    connections = manager.active_connections.get(str(room_id))
+    if connections:
+        active_users = list(connections.values())
+
+    return active_users
+
+
+# AUTHORIZED AND OWNER CHECK
 @router.post("/create/room/private/{user_id}")
 def create_private_room(
     user_id: str,
-    room: RoomRequest
+    room: RoomRequest,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
+    check_owner(request, user_id)
+
     if len(room.members) != 2:
         raise HTTPException(status_code=403, detail="Only 2 members")
 
@@ -55,11 +82,16 @@ def create_private_room(
         raise invalid_id_exception
 
 
+# AUTHORIZED AND OWNER CHECK
 @router.post("/create/room/group/{user_id}")
 def create_group_room(
     user_id: str,
-    room: RoomRequest
+    room: RoomRequest,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
+    check_owner(request, user_id)
+
     try:
         user_id = ObjectId(user_id)
 
@@ -90,11 +122,16 @@ def create_group_room(
         raise invalid_id_exception
 
 
+# AUTHORIZED AND OWNER CHECK
 @router.post("/join/room/{room_id}")
 def join_room(
     room_id: str,
-    user_id: str
+    user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
+    check_owner(request, user_id)
+
     try:
         room_id = ObjectId(room_id)
         user_id = ObjectId(user_id)
@@ -126,12 +163,17 @@ def join_room(
     return {'message': 'Joined successfuly'}
 
 
+# AUTHORIZED AND OWNER CHECK
 @router.post("/add-people/{room_id}")
 def add_people(
     room_id: str,
     user_id: str,
-    users: AddUsersRequest
+    users: AddUsersRequest,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
+    check_owner(request, user_id)
+
     try:
         room_id = ObjectId(room_id)
         user_id = ObjectId(user_id)
@@ -180,12 +222,17 @@ def add_people(
         raise invalid_id_exception
 
 
+# AUTHORIZED AND OWNER CHECK
 @router.delete("/remove-people/{room_id}")
 def remove_people(
     room_id: str,
     user_id: str,
     users: RemoveUsersRequest,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
+    check_owner(request, user_id)
+
     try:
         room_id = ObjectId(room_id)
         user_id = ObjectId(user_id)
@@ -200,9 +247,6 @@ def remove_people(
 
         room_members = [room_member for room_member in room['members']]
         if room.get('owner') != user_id:
-            print(room)
-            print(room.get('owner'))
-            print(user_id)
             raise HTTPException(status_code=403, detail="Permission denied, not the owner of group")
 
         user = users_collection.find_one({ "_id": user_id })
@@ -239,9 +283,12 @@ def remove_people(
         raise invalid_id_exception
 
 
+# AUTHORIZED
 @router.get("/room/{room_id}/members")
 def get_room_members(
     room_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
     try:
         room_id = ObjectId(room_id)
@@ -258,9 +305,12 @@ def get_room_members(
     return {'members': room['members']}
 
 
+# AUTHORIZED
 @router.get("/room/{room_id}/online-members")
 def get_onine_people(
-    room_id: str
+    room_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
     try:
         room_id = ObjectId(room_id)
@@ -274,14 +324,10 @@ def get_onine_people(
         if not room:
             raise HTTPException(status_code=404, detail="Room not found")
 
-    active_users = []
-    connections = manager.active_connections.get(str(room_id))
-    if connections:
-        active_users = list(connections.values())
-
-    print(active_users)
+    active_users = get_online_users(room_id)
 
     return {"online_users": active_users}
+
 
 class ConnectionManager:
     def __init__(self):      # { room_id: { WebSocket: user_id, ... } }
@@ -307,6 +353,9 @@ class ConnectionManager:
         return True
 
     async def broadcast_to_room(self, message: dict):
+        if not is_user_in_room(message['sender_id'], message['room_id']):
+            return
+
         room_id = message['room_id']
         connections = self.active_connections.get(room_id, [])
 

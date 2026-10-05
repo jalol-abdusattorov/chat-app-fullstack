@@ -1,20 +1,28 @@
+from typing import Annotated
+
 import bson
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from db import messages_collection, users_collection, privates_collection, groups_collection
-
+from routes.rooms import swagger_bearer_scheme, is_user_in_room
 
 invalid_id_exception = HTTPException(status_code=403, detail="invalid id")
 router = APIRouter()
 
+# AUTHORIZED AND IN ROOM CHECK
 @router.get("/room/{room_id}/messages")
 def get_room_messages(
     room_id: str,
     user_id: str,
     page: int,
-    room_type: str | None = None
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)],
+    room_type: str | None = None,
 ):
+    if not is_user_in_room(user_id, room_id):
+        raise HTTPException(status_code=403, detail="User not in room")
+
     try:
         room_id = ObjectId(room_id)
         user_id = ObjectId(user_id)
@@ -48,7 +56,7 @@ def get_room_messages(
     skipping_val = (page - 1) * 100
     limit = 100
 
-    messages = messages_collection.find({ "room_id": room_id },  { "created_at": -1 }).skip(skipping_val).limit(limit).to_list(100)
+    messages = messages_collection.find({ "room_id": room_id }).sort("created_at", -1).skip(skipping_val).limit(limit).to_list(100)
 
     if not messages:
         return {'message': "Chat/Page is empty"}
