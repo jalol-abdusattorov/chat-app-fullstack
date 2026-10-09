@@ -10,6 +10,6 @@ client = MongoClient(CONNECTION_STRING)
 
 db = client.chatsDB
 users_collection = db.users
-privates_collection = db.privates
-groups_collection = db.groups
+rooms_collection = db.rooms
+room_members_collection = db.room_members
 messages_collection = db.messages
