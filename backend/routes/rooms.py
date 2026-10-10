@@ -1,5 +1,4 @@
 from typing import Annotated
-
 import bson
 from bson import ObjectId
 from datetime import datetime as dt, timezone
@@ -27,7 +26,6 @@ def is_user_in_room(user_id: str, room_id: str):
 
     return False
 
-
 def get_online_users(room_id: str):
     active_users = []
     connections = manager.active_connections.get(str(room_id))
@@ -36,7 +34,6 @@ def get_online_users(room_id: str):
 
     return active_users
 
-
 def is_user_online_check(user_id: str):
     for room in manager.active_connections:
         for _id in room.values():
@@ -44,7 +41,6 @@ def is_user_online_check(user_id: str):
                 return True
 
     return False
-
 
 def add_person_to_room(uid: ObjectId, rid: ObjectId, role="member"):
     room = rooms_collection.find_one({ "_id": rid })
@@ -96,8 +92,9 @@ def add_people_to_room(candidate_uids: list[ObjectId], rid: ObjectId):
 
         tried_uids.append(str(adding_u))
 
-    result = room_members_collection.insert_many(bulk_inserts)
-    print(result)
+    if bulk_inserts:
+        room_members_collection.insert_many(bulk_inserts)
+
     return {
         'status': 'success',
         'added_uids_count': len(added_uids),
@@ -106,6 +103,34 @@ def add_people_to_room(candidate_uids: list[ObjectId], rid: ObjectId):
         'tried_uids': tried_uids,
     }
 
+def remove_people_from_room(candidate_uids: list[ObjectId], room: dict, rid: ObjectId):
+    deleted_uids = []
+    tried_uids = []
+    bulk_removals = []
+
+    for candidate_uid in candidate_uids:
+        user_a_member = room_members_collection.find_one({ "room_id": rid, "user_id": candidate_uid })
+        if not user_a_member:
+            raise HTTPException(status_code=404, detail=f"User not a member '{str(candidate_uid)}'")
+
+        if user_a_member.get('role', 'member') == 'owner':
+            tried_uids.append(str(candidate_uid))
+            continue
+
+        deleted_uids.append(str(candidate_uid))
+        bulk_removals.append(candidate_uid)
+
+    if bulk_removals:
+        res = room_members_collection.delete_many({ "room_id": rid, "user_id": { "$in": bulk_removals } })
+
+    return {
+        'status': 'success',
+        'deleted_uids_count': len(deleted_uids),
+        'tried_uids_count': len(tried_uids),
+        'deleted_uids': deleted_uids,
+        'tried_uids': tried_uids,
+        'deleted_docs': res.deleted_count if bulk_removals else 0
+    }
 
 # AUTHORIZED
 @router.post("/rooms/create-room/{user_id}")
@@ -143,9 +168,12 @@ def create_room(
                 'description': room.description,
                 'type': room.room_type,
                 'owner_id': user_id,
-                'last-seq': 0,
+                'last_seq': 0,
                 'created_at': dt.now(timezone.utc)
             }
+        else:
+            raise HTTPException(status_code=403, detail="Invalid room type")
+
         room_id = rooms_collection.insert_one(new_room).inserted_id
 
         all_members = []
@@ -194,6 +222,11 @@ def join_room(
     user = users_collection.find_one({ "_id": uid })
     if not user:
         raise user_not_found_exception
+
+    room = rooms_collection.find_one({ "_id": rid }, { 'type': 1 })
+    if room.get('type') == 'private':
+        raise HTTPException(status_code=403, detail="Cannot join private chat")
+
     room_member = room_members_collection.find_one({ "room_id": rid, "user_id": uid })
     if room_member:
         return {"message": f"User has already joined the room {room_id}"}
@@ -225,57 +258,59 @@ def add_people(
     if not user:
         raise user_not_found_exception
 
+    room_member = room_members_collection.find_one({ "room_id": rid, "user_id": uid })
+    if room_member['role'] != 'owner':
+        raise
 
     result = add_people_to_room(candidate_uids, rid)
 
     return result
 
-    # try:
-    #     room_id = ObjectId(room_id)
-    #     user_id = ObjectId(user_id)
 
-    #     user = users_collection.find_one({ "_id": user_id })
-    #     if not user:
-    #         raise HTTPException(status_code=404, detail=f"Adder not found '{str(user_id)}'")
+# AUTHORIZED AND OWNER CHECK
+@router.delete("/room/{room_id}/kick")
+def kick_person(
+    room_id: str,
+    user_id: str,
+    kicking_user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
+):
+    check_owner(request, user_id)
 
-    #     room = privates_collection.find_one({ "_id": room_id })
-    #     if room:
-    #         raise HTTPException(status_code=403, detail="Cannot invite people to private chat")
+    try:
+        rid = ObjectId(room_id)
+        uid = ObjectId(user_id)
+        kicking_uid = ObjectId(kicking_user_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
 
-    #     room = groups_collection.find_one({ "_id": room_id })
-    #     room_members = [room_member for room_member in room['members']]
+    # Validate that User whos kicking isn't member (should be admin or owner)
+    user = room_members_collection.find_one({ "room_id": rid, "user_id": uid }, { 'role': 1 })
+    if not user:
+        raise user_not_found_exception
+    if user.get('role', 'member') == 'member':
+        raise HTTPException(status_code=403, detail='Access denied')
 
-    #     if user_id not in room_members:
-    #         raise HTTPException(status_code=403, detail="User hasn't joined the chat")
+    # Validate room exists and its not private room
+    room = rooms_collection.find_one({ "_id": rid }, { 'type': 1 })
+    if not room:
+        raise room_not_found_exception
+    if room.get('type') == 'private':
+        raise HTTPException(status_code=403, detail="Cannot kick person from private chat")
 
-    #     added_user_ids = []
-    #     added_count = 0
-    #     tried_count = 0
-    #     for i in users.users:
-    #         i = ObjectId(i)
+    # Validate that User being kicked isn't the owner of the group
+    kicking_user = room_members_collection.find_one({ "room_id": rid, "user_id": kicking_uid }, { 'role': 1, '_id': 1 })
+    if not kicking_user:
+        raise HTTPException(status_code=404, detail=f"User not found '{str(kicking_uid)}'")
+    if kicking_user.get('role', 'member') == 'owner' or kicking_user.get('role', 'member') == 'admin':
+        raise HTTPException(status_code=403, detail="Cannot kick owner")
 
-    #         temp = users_collection.find_one({ "_id": i })
-    #         if not temp:
-    #             raise HTTPException(status_code=404, detail=f"User not found '{str(i)}'")
-
-    #         if not i in room_members:
-    #             users_collection.update_one({ "_id": i }, { "$push": { "joined_rooms": room_id } })
-    #             groups_collection.update_one({ "_id": room_id }, { "$push": { "members": i } })
-
-    #             added_user_ids.append(str(i))
-
-    #             added_count += 1
-    #         else:
-    #             tried_count += 1
-
-    #     return {
-    #         'added_count': added_count,
-    #         'tried_count': tried_count,
-    #         'added_users': added_user_ids
-    #     }
-
-    # except bson.errors.InvalidId:
-    #     raise invalid_id_exception
+    del_count = room_members_collection.delete_one({ "_id": kicking_user['_id'] }).deleted_count
+    return {
+        'status': 'success',
+        'deleted_docs': del_count,
+    }
 
 
 # AUTHORIZED AND OWNER CHECK
@@ -283,60 +318,84 @@ def add_people(
 def remove_people(
     room_id: str,
     user_id: str,
-    users: RemoveUsersRequest,
+    removing_users: RemoveUsersRequest,
     request: Request,
     _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
     check_owner(request, user_id)
 
     try:
-        room_id = ObjectId(room_id)
-        user_id = ObjectId(user_id)
-
-        room = privates_collection.find_one({ "_id": room_id })
-        if room:
-            raise HTTPException(status_code=403, detail="Cannot remove people from private chat")
-
-        room = groups_collection.find_one({ "_id": room_id })
-        if not room:
-            raise HTTPException(status_code=403, detail="room not found")
-
-        room_members = [room_member for room_member in room['members']]
-        if room.get('owner') != user_id:
-            raise HTTPException(status_code=403, detail="Permission denied, not the owner of group")
-
-        user = users_collection.find_one({ "_id": user_id })
-        if not user:
-            raise HTTPException(status_code=403, detail=f"Remover not found '{user}")
-        if user_id not in room_members:
-            raise HTTPException(status_code=403, detail="User hasn't joined the room")
-
-        removed_user_ids = []
-        removed_count = 0
-        for i in users.users:
-            i = ObjectId(i)
-            adding_user = users_collection.find_one({ "_id": i })
-            if not adding_user:
-                raise HTTPException(status_code=404, detail=f"User not found '{str(i)}")
-
-            if i not in room_members:
-                raise HTTPException(status_code=403, detail=f"User not in room '{str(i)}'")
-
-            if i == room['owner']:
-                raise HTTPException(status_code=403, detail="Cannot remove owner")
-
-            groups_collection.update_one({ "_id": room_id }, { "$pull": { "members": i } })
-            users_collection.update_one({ "_id": i }, { "$pull": { "joined_rooms": room_id } })
-            removed_user_ids.append(str(i))
-            removed_count += 1
-
-        return {
-            'removed_count': removed_count,
-            'removed_users': removed_user_ids
-        }
-
+        rid = ObjectId(room_id)
+        uid = ObjectId(user_id)
+        candidate_uids = [ObjectId(u) for u in removing_users.users]
     except bson.errors.InvalidId:
         raise invalid_id_exception
+
+    user = users_collection.find_one({ "_id": uid })
+    if not user:
+        raise user_not_found_exception
+
+    room = rooms_collection.find_one({ "_id": rid }, { "type": 1 })
+    if not room:
+        raise room_not_found_exception
+    if room.get('type', '') == 'private':
+        raise HTTPException(status_code=403, detail='Cannot remove people from private chat')
+
+    member = room_members_collection.find_one({ "room_id": rid, "user_id": uid }, { 'role': 1 })
+    if member.get('role', 'member') != 'owner':
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    res = remove_people_from_room(candidate_uids, room, rid)
+    return res
+
+    # try:
+    #     room_id = ObjectId(room_id)
+    #     user_id = ObjectId(user_id)
+
+    #     room = privates_collection.find_one({ "_id": room_id })
+    #     if room:
+    #         raise HTTPException(status_code=403, detail="Cannot remove people from private chat")
+
+    #     room = groups_collection.find_one({ "_id": room_id })
+    #     if not room:
+    #         raise HTTPException(status_code=403, detail="room not found")
+
+    #     room_members = [room_member for room_member in room['members']]
+    #     if room.get('owner') != user_id:
+    #         raise HTTPException(status_code=403, detail="Permission denied, not the owner of group")
+
+    #     user = users_collection.find_one({ "_id": user_id })
+    #     if not user:
+    #         raise HTTPException(status_code=403, detail=f"Remover not found '{user}")
+    #     if user_id not in room_members:
+    #         raise HTTPException(status_code=403, detail="User hasn't joined the room")
+
+    #     removed_user_ids = []
+    #     removed_count = 0
+    #     for i in users.users:
+    #         i = ObjectId(i)
+    #         adding_user = users_collection.find_one({ "_id": i })
+    #         if not adding_user:
+    #             raise HTTPException(status_code=404, detail=f"User not found '{str(i)}")
+
+    #         if i not in room_members:
+    #             raise HTTPException(status_code=403, detail=f"User not in room '{str(i)}'")
+
+    #         if i == room['owner']:
+    #             raise HTTPException(status_code=403, detail="Cannot remove owner")
+
+    #         groups_collection.update_one({ "_id": room_id }, { "$pull": { "members": i } })
+    #         users_collection.update_one({ "_id": i }, { "$pull": { "joined_rooms": room_id } })
+    #         removed_user_ids.append(str(i))
+    #         removed_count += 1
+
+    #     return {
+    #         'removed_count': removed_count,
+    #         'removed_users': removed_user_ids
+    #     }
+
+    # except bson.errors.InvalidId:
+    #     raise invalid_id_exception
 
 
 # AUTHORIZED
@@ -347,18 +406,22 @@ def get_room_members(
     _: Annotated[str, Depends(swagger_bearer_scheme)]
 ):
     try:
-        room_id = ObjectId(room_id)
+        rid = ObjectId(room_id)
     except bson.errors.InvalidId:
         raise invalid_id_exception
 
-    room = privates_collection.find_one({ "_id": room_id })
-    if not room:
-        room = groups_collection.find_one({ "_id": room_id })
+    cursor = room_members_collection.find({ "room_id": rid })
+    room_members = list(cursor)
 
-        if not room:
-            raise HTTPException(status_code=404, detail="Room not found")
+    for room_member in room_members:
+        room_member['_id'] = str(room_member['_id'])
+        room_member['room_id'] = str(room_member['room_id'])
+        room_member['user_id'] = str(room_member['user_id'])
 
-    return {'members': room['members']}
+    return {
+        'member_count': len(room_members),
+        'members': room_members
+    }
 
 
 # AUTHORIZED
@@ -373,12 +436,9 @@ def get_onine_people(
     except bson.errors.InvalidId:
         raise invalid_id_exception
 
-    room = privates_collection.find_one({ "_id": room_id })
+    room = rooms_collection.find_one({ "_id": room_id })
     if not room:
-        room = groups_collection.find_one({ "_id": room_id })
-
-        if not room:
-            raise HTTPException(status_code=404, detail="Room not found")
+        raise HTTPException(status_code=404, detail="Room not found")
 
     active_users = get_online_users(room_id)
 
@@ -414,17 +474,6 @@ class ConnectionManager:
 
         for connection in dead_cons:
             await self.disconnect(connection, room_id)
-
-        # if not self.is_user_a_member(message['sender_id'], message["room_id"]):
-        #     return
-        # if not is_user_in_room(message['sender_id'], message['room_id']):
-        #     return
-
-        # room_id = message['room_id']
-        # connections = self.active_connections.get(room_id, [])
-
-        # for connection in connections:
-        #     await connection.send_json(message)
 
     async def disconnect(self, websocket, room_id):
         connections = self.active_connections.get(room_id, [])
@@ -479,7 +528,6 @@ async def websocket(
 
     is_allowed = await manager.connect(websocket, user_id, room_id)
     if not is_allowed:
-        print("isn't allowed")
         return
 
     try:
@@ -496,7 +544,7 @@ async def websocket(
                 { "$inc": { "last_seq": 1 } },
                 return_document=ReturnDocument.AFTER
             )
-            print(room)
+
             if room is None:
                 await websocket.send_json({"type": "error", "error": "room_not_found"})
                 continue

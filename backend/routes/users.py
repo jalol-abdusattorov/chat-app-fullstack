@@ -1,3 +1,4 @@
+from random import choice
 import re
 import bson
 from typing import Annotated
@@ -10,11 +11,13 @@ from auth.services.auth_service import create_access_token
 from auth.models.token import Token
 from routes.rooms import is_user_online_check
 from models import UsersRequest
-from db import users_collection, rooms_collection, messages_collection
+from db import users_collection, rooms_collection, messages_collection, room_members_collection
 from routes.route_utils import check_owner, swagger_bearer_scheme
 
-    
+
 invalid_id_exception = HTTPException(status_code=403, detail="invalid id")
+room_not_found_exception = HTTPException(status_code=404, detail="Room not found")
+user_not_found_exception = HTTPException(status_code=404, detail="User not found")
 router = APIRouter()
 
 # NO AUTH
@@ -127,79 +130,81 @@ def is_user_online(
     return is_user_online_check(str(user_id))
 
 
-# # AUTHOIRZED AND OWNER CHECK
-# @router.delete('/users/leave-private/{room_id}')
-# def leave_private_chat(
-#     room_id: str,
-#     user_id: str,
-#     request: Request,
-#     _: Annotated[str, Depends(swagger_bearer_scheme)]
-# ):
-#     check_owner(request, user_id)
-#     try:
-#         room_id = ObjectId(room_id)
-#         user_id = ObjectId(user_id)
+# AUTHOIRZED AND OWNER CHECK
+@router.delete('/users/leave-private/{room_id}')
+def leave_private_chat(
+    room_id: str,
+    user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
+):
+    check_owner(request, user_id)
 
-#         room = privates_collection.find_one({ "_id": room_id })
-#         user = users_collection.find_one({ "_id": user_id })
-#         if not room:
-#             raise HTTPException(status_code=403, detail="Room not found")
-#         if not user:
-#             raise HTTPException(status_code=403, detail="User not found")
+    try:
+        rid = ObjectId(room_id)
+        uid = ObjectId(user_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
 
-#         user1 = room['members'][0]
-#         user2 = room['members'][1]
-#         if user1 != user_id and user2 != user_id:
-#             raise HTTPException(status_code=403, detail="Cannot leave private chat for others")
+    room_deleted = rooms_collection.delete_one({ "_id": rid }).deleted_count
+    if room_deleted == 0:
+        raise room_not_found_exception
 
-#         users_collection.update_one({ "_id": user1 }, { "$pull": { "joined_rooms": room_id } })
-#         users_collection.update_one({ "_id": user2 }, { "$pull": { "joined_rooms": room_id } })
-#         privates_collection.delete_one({ "_id": room_id })
-#         messages_collection.delete_many({ "room_id": room_id })
+    deleted = room_members_collection.delete_many({ "room_id": rid }).deleted_count
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Member not found")
 
-#         return {"message": "Success"}
-
-#     except bson.errors.InvalidId:
-#         raise invalid_id_exception
+    return {
+        'status': 'deleted',
+        'message': f'left private chat, removed {deleted} members, and deleted {room_deleted} room'
+    }
 
 
-# # AUTHOIRZED AND OWNER CHECK
-# @router.delete('/users/leave-group/{room_id}')
-# def leave_group_chat(
-#     room_id: str,
-#     user_id: str,
-#     request: Request,
-#     _: Annotated[str, Depends(swagger_bearer_scheme)]
-# ):
-#     check_owner(request, user_id)
-#     try:
-#         room_id = ObjectId(room_id)
-#         user_id = ObjectId(user_id)
+# AUTHOIRZED AND OWNER CHECK
+@router.delete('/users/leave-group/{room_id}')
+def leave_group_chat(
+    room_id: str,
+    user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
+):
+    check_owner(request, user_id)
 
-#         user = users_collection.find_one({ "_id": user_id })
-#         room = groups_collection.find_one({ "_id": room_id })
-#         room_members = [room_member for room_member in room['members']]
+    try:
+        rid = ObjectId(room_id)
+        uid = ObjectId(user_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
 
-#         if not user:
-#             raise HTTPException(status_code=404, detail="User not found")
-#         if not room:
-#             raise HTTPException(status_code=404, detail="Room not found")
+    member = room_members_collection.find_one({ "room_id": rid, "user_id": uid }, { '_id': 0, 'role': 1, 'user_id': 1 })
+    if not member:
+        raise HTTPException(status_code=403, detail="Room not found or Member not found")
+    room_members = list(room_members_collection.find({ "room_id": rid }, { "_id": 0, 'role': 1, 'user_id': 1 }))
+    members_count = len(room_members)
 
-#         if user_id not in room_members:
-#             raise HTTPException(status_code=403, detail="User hasn't joined the room")
+    # If the owner is leaving one of the ADMINS will be new owner or it'll be randomly selected (any member)
+    room_members = [i for i in room_members if i != member]
+    if member.get('role') == 'owner':
 
-#         if room.get('owner') == user_id:
-#             for i in room['members']:
-#                 i = ObjectId(i)
-#                 users_collection.update_one({ "_id": i }, { "$pull": { "joined_rooms": room_id } })
+        if members_count > 1:
+            is_there_admin = False
+            for i in room_members:
+                if i.get('role') == 'admin':
+                    is_there_admin = True
+                    break
 
-#             groups_collection.delete_one({ "_id": room_id })
-#             messages_collection.delete_many({ "room_id": room_id })
+            if is_there_admin:
+                room_members = [j for j in room_members if j.get('role') == 'admin']
+            
+            new_owner = choice(room_members)
+            room_members_collection.update_one({ "room_id": rid, "user_id": ObjectId(new_owner['user_id']) }, { "$set": { "role": "owner" } })
 
-#         users_collection.update_one({ "_id": user_id }, { "$pull": { "joined_rooms": room_id } })
-#         groups_collection.update_one({ "_id": room_id }, { "$pull": { "members": user_id } })
+    room_members_collection.delete_one({ "room_id": rid, "user_id": uid })
 
-#         return {"message": "Success"}
+    if members_count == 1:
+        rooms_collection.delete_one({ "_id": rid })
 
-#     except bson.errors.InvalidId:
-#         raise invalid_id_exception
+    return {
+        'status': 'deleted',
+        'message': 'successfuly left the group'
+    }
