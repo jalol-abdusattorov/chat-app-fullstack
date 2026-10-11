@@ -4,6 +4,7 @@ from bson import ObjectId
 from datetime import datetime as dt, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status, WebSocket, WebSocketDisconnect
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from models import AddUsersRequest, RemoveUsersRequest, RoomRequest
 from db import users_collection, rooms_collection, messages_collection, room_members_collection
@@ -132,6 +133,7 @@ def remove_people_from_room(candidate_uids: list[ObjectId], room: dict, rid: Obj
         'deleted_docs': res.deleted_count if bulk_removals else 0
     }
 
+
 # AUTHORIZED
 @router.post("/rooms/create-room/{user_id}")
 def create_room(
@@ -143,64 +145,178 @@ def create_room(
     check_owner(request, user_id)
 
     try:
-        user_id = ObjectId(user_id)
-        user = users_collection.find_one({ "_id": user_id })
-        if not user:
-            raise HTTPException(status_code=404, detail=f"User not found '{str(user_id)}'")
-        if room.room_type == 'private' and len(room.room_members) != 2:
-            raise HTTPException(status_code=403, detail="Cannot add more/less than 2 members")
-        if len(set(room.room_members)) != len(room.room_members):
-            raise HTTPException(status_code=403, detail="Cannot have duplicate users")
-
-        if room.room_type == "private":
-            new_room = {
-                'name': None,
-                'description': room.description,
-                'type': room.room_type,
-                'owner_id': None,
-                'last_seq': 0,
-                'created_at': dt.now(timezone.utc)
-            }
-
-        elif room.room_type == "group":
-            new_room = {
-                'name': room.name,
-                'description': room.description,
-                'type': room.room_type,
-                'owner_id': user_id,
-                'last_seq': 0,
-                'created_at': dt.now(timezone.utc)
-            }
-        else:
-            raise HTTPException(status_code=403, detail="Invalid room type")
-
-        room_id = rooms_collection.insert_one(new_room).inserted_id
-
-        all_members = []
-        for member_id in room.room_members:
-            member_id = ObjectId(member_id)
-            member = users_collection.find_one({ "_id": member_id })
-            if not member:
-                rooms_collection.delete_one({ "_id": room_id })
-                raise HTTPException(status_code=404, detail=f"User not found '{str(member_id)}'")
-
-            new_member = {
-                'room_id': room_id,
-                'user_id': member_id,
-                'role': 'owner' if member_id == user_id else 'owner' if room.room_type == 'private' else 'member',
-                'last_read_seq': 0,
-                'joined_seq': 0,
-                'joined_at': dt.now(timezone.utc)
-            }
-            all_members.append(new_member)
-
-
-        room_members_collection.insert_many(all_members)
-
-        return {"room_id": str(room_id)}
-
+        owner_id = ObjectId(user_id)
+        member_ids = [ObjectId(m_id) for m_id in room.room_members]
     except bson.errors.InvalidId:
         raise invalid_id_exception
+
+    if room.room_type not in {"private", "group"}:
+        raise HTTPException(status_code=400, detail="Invalid room type")
+
+    # Validate membership.
+    if len(member_ids) != len(set(member_ids)):
+        raise HTTPException(status_code=400, detail="Duplicate users are not allowed")
+
+    if owner_id not in member_ids:
+        raise HTTPException(status_code=400, detail="The room creator must be a member")
+
+    if room.room_type == "private" and len(member_ids) != 2:
+        raise HTTPException(status_code=400, detail="A private room must have exactly 2 members")
+
+    existing_users = {
+        user['_id']
+        for user in users_collection.find(
+            { "_id": { "$in": member_ids } },
+            { "_id": 1 }
+        )
+    }
+
+    missing_users = set(member_ids) - existing_users
+
+    if missing_users:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User not found: {', '.join(map(str, missing_users))}"
+        )
+
+    # Check whether the room already exists between these users.
+    if room.room_type == 'private':
+        private_key = ":".join(sorted(str(mid) for mid in member_ids))
+
+        if rooms_collection.find_one({ 'type': 'private', 'private_key': private_key }):
+            raise HTTPException(
+                status_code=409,
+                detail="Private chat already exists"
+            )
+
+        new_room = {
+            'name': None,
+            'description': room.description,
+            'type': room.room_type,
+            'private_key': private_key,
+            'owner_id': None,
+            'last_seq': 0,
+            'created_at': dt.now(timezone.utc),
+        }
+    else:
+        new_room = {
+            'name': room.name,
+            'description': room.description,
+            'type': room.room_type,
+            'owner_id': owner_id,
+            'last_seq': 0,
+            'created_at': dt.now(timezone.utc),
+        }
+
+    try:
+        room_id = rooms_collection.insert_one(new_room).inserted_id
+    except DuplicateKeyError:
+        if room.room_type == "private":
+            raise HTTPException(
+                status_code=409,
+                detail="Private chat already exists",
+            )
+        raise
+
+    all_members = [
+        {
+            'room_id': room_id,
+            'user_id': member_id,
+            'role': 
+                'owner'
+                    if member_id == owner_id else
+                'owner'
+                    if room.room_type == 'private' else
+                'member',
+            'last_read_seq': 0,
+            'joined_seq': 0,
+            'joined_at': dt.now(timezone.utc)
+        }
+        for member_id in member_ids
+    ]
+
+    try: 
+        room_members_collection.insert_many(all_members)
+    except Exception:
+        rooms_collection.delete_one({ "_id": room_id })
+        room_members_collection.delete_many({ "room_id": room_id })
+        raise
+
+    return {"room_id": str(room_id)}
+
+
+    # try:
+    #     user_id = ObjectId(user_id)
+    #     user = users_collection.find_one({ "_id": user_id })
+    #     if not user:
+    #         raise HTTPException(status_code=404, detail=f"User not found '{str(user_id)}'")
+    #     if room.room_type == 'private' and len(room.room_members) != 2:
+    #         raise HTTPException(status_code=403, detail="Cannot add more/less than 2 members")
+    #     if len(set(room.room_members)) != len(room.room_members):
+    #         raise HTTPException(status_code=403, detail="Cannot have duplicate users")
+
+    #     if room.room_type == "private":
+    #         new_room = {
+    #             'name': None,
+    #             'description': room.description,
+    #             'type': room.room_type,
+    #             'owner_id': None,
+    #             'last_seq': 0,
+    #             'created_at': dt.now(timezone.utc)
+    #         }
+
+    #     elif room.room_type == "group":
+    #         new_room = {
+    #             'name': room.name,
+    #             'description': room.description,
+    #             'type': room.room_type,
+    #             'owner_id': user_id,
+    #             'last_seq': 0,
+    #             'created_at': dt.now(timezone.utc)
+    #         }
+    #     else:
+    #         raise HTTPException(status_code=403, detail="Invalid room type")
+
+    #     if room.room_type == 'private':
+    #         first_member = room_members_collection.find({ "user_id": user_id })
+    #         second_member = room_members_collection.find({ "user_id": ObjectId(room.room_members[1]) })
+    #         second_member_joined_rooms = [j['room_id'] for j in second_member]
+
+    #         for i in first_member:
+    #             if i['room_id'] in second_member_joined_rooms:
+    #                 room = rooms_collection.find_one({ "_id": i['room_id'] })
+    #                 if room.get('type') == 'private':
+    #                     raise HTTPException(status_code=403, detail="Room already created")
+
+    #                 break
+
+    #     room_id = rooms_collection.insert_one(new_room).inserted_id
+
+    #     all_members = []
+    #     for member_id in room.room_members:
+    #         member_id = ObjectId(member_id)
+    #         member = users_collection.find_one({ "_id": member_id })
+    #         if not member:
+    #             rooms_collection.delete_one({ "_id": room_id })
+    #             raise HTTPException(status_code=404, detail=f"User not found '{str(member_id)}'")
+
+    #         new_member = {
+    #             'room_id': room_id,
+    #             'user_id': member_id,
+    #             'role': 'owner' if member_id == user_id else 'owner' if room.room_type == 'private' else 'member',
+    #             'last_read_seq': 0,
+    #             'joined_seq': 0,
+    #             'joined_at': dt.now(timezone.utc)
+    #         }
+    #         all_members.append(new_member)
+
+
+    #     room_members_collection.insert_many(all_members)
+
+    #     return {"room_id": str(room_id)}
+
+    # except bson.errors.InvalidId:
+    #     raise invalid_id_exception
 
 
 # AUTHORIZED AND OWNER CHECK
