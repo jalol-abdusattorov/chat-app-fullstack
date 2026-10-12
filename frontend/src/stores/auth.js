@@ -1,6 +1,7 @@
 import api from "../api/axios.js";
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { jwtDecode } from 'jwt-decode';
 
 export function isTokenExpired(token) {
   if (!token) return true;
@@ -11,6 +12,7 @@ export function isTokenExpired(token) {
 
     return decoded.exp < currentTime;
   } catch (error) {
+    console.error(error)
     return true;
   }
 }

@@ -1,7 +1,13 @@
 <template>
-  <router-view></router-view>
+  <main>
+    <RouterView />
+  </main>
 </template>
 
 <script>
 
 </script>
+
+<style scoped>
+
+</style>

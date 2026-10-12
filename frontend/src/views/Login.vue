@@ -124,9 +124,9 @@ import { useRouter } from 'vue-router'
             const handleSubmit = async () => {
                 try {
                     const response = await authStore.login({ email: email.value, password: password.value })
-                    console.log(response);
-                    if (response) {
-                        router.push({ name: "Home" })
+
+                    if (response?.id && response?.email) {
+                        router.replace({ name: "Home" })
                     }
                 } catch (exc) {
                     

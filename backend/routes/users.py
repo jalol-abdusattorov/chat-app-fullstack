@@ -3,16 +3,16 @@ import re
 import bson
 from typing import Annotated
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from datetime import datetime as dt, timedelta, timezone
 
 from auth.utils.auth_utils import get_password_hash
 from auth.services.auth_service import create_access_token
 from auth.models.token import Token
-from routes.rooms import is_user_online_check
+from routes.rooms import is_user_in_room, is_user_online_check
 from models import UsersRequest
 from db import users_collection, rooms_collection, messages_collection, room_members_collection
-from routes.route_utils import check_owner, swagger_bearer_scheme
+from routes.route_utils import check_owner, count_user_unread_messages, mark_read, swagger_bearer_scheme, get_room_last_message
 
 
 invalid_id_exception = HTTPException(status_code=403, detail="invalid id")
@@ -75,6 +75,91 @@ def get_user(
     del user['password_hash']
 
     return user
+
+
+# AUTHORIZED
+@router.get("/users/{user_id}/display_name")
+def get_user_username(
+    user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
+):
+    try:
+        uid = ObjectId(user_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
+
+    user = users_collection.find_one({ "_id": uid }, { "display_name": 1 })
+
+    return {
+        'user_id': user_id,
+        'display_name': user['display_name']
+    }
+
+
+# AUTHORIZED
+@router.get("/users/get-user-rooms/{user_id}")
+def get_user_rooms(
+    user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)],
+):
+    check_owner(request, user_id)
+
+    try:
+        uid = ObjectId(user_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
+
+    user_joined_rooms = list(room_members_collection.find({ "user_id": uid }, { "_id": 0, "room_id": 1 }))
+
+    for dct in user_joined_rooms:
+        room = rooms_collection.find_one({ "_id": dct['room_id'] }, { "type": 1, "name": 1 })
+        
+        if room['type'] == 'private':
+            members = list(room_members_collection.find({ "room_id": dct['room_id'] }))
+            other_user = members[0]['user_id']
+            if members[0]['user_id'] == uid:
+                other_user = members[1]['user_id']
+
+            dct['name'] = users_collection.find_one({ "_id": other_user }, { 'display_name': 1 })['display_name']
+        else:
+            dct['name'] = room['name']
+
+        dct['last_message'] = get_room_last_message(dct['room_id'])
+        dct['unread_count'] = count_user_unread_messages(dct['room_id'], uid)
+        dct['room_id'] = str(dct['room_id'])
+
+    return {'rooms': user_joined_rooms}
+
+
+# AUTHORIZED AND IN ROOM CHECK
+@router.put("/users/read-messages/{user_id}")
+def read_messages(
+    user_id: str,
+    room_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)],
+    seq: int = Query(gt=0),
+):
+    check_owner(request, user_id)
+
+    if not is_user_in_room(user_id, room_id):
+        raise HTTPException(status_code=403, detail="User not in room")
+
+    try:
+        uid = ObjectId(user_id)
+        rid = ObjectId(room_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
+
+    unread_msgs_before = count_user_unread_messages(rid, uid)
+    mark_read(rid, uid, seq)
+    unread_msgs = count_user_unread_messages(rid, uid)
+
+    return {
+        'read_messages_count': unread_msgs_before - unread_msgs
+    }
 
 
 # AUTHORIZED

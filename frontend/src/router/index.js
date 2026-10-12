@@ -1,58 +1,74 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '../stores/auth.js'
+import { isTokenExpired, useAuthStore } from '../stores/auth.js'
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [
+history: createWebHistory(import.meta.env.BASE_URL),
+routes: [
     {
-      path: "/",
-      name: "Home",
-      component: () => import('../views/Home.vue'),
-      meta: { requireAuth: true }
+        path: "/",
+        name: "Home",
+        component: () => import('../views/Home.vue'),
+        meta: { requiresAuth: true },
+        children: [
+            {
+                path: "",
+                name: "ChatSideBar",
+                component: () => import('../components/ChatSideBar.vue')
+            },
+            {
+                path: ":room_id",
+                name: "ChatRoom",
+                component: () => import('../views/Room.vue')
+            }
+        ]
     },
     {
-      path: "/room/:room_id",
-      name: "Room",
-      component: () => import('../views/Room.vue'),
-      props: true,
-      meta: { requireAuth: true }
+        path: "/register",
+        name: "Register",
+        component: () => import('../views/Register.vue'),
+        props: true,
+        meta: { requiresGuest: true }
     },
     {
-      path: "/register",
-      name: "Register",
-      component: () => import('../views/Register.vue'),
-      props: true,
-      meta: { requireGuest: true }
+        path: "/login",
+        name: "Login",
+        component: () => import('../views/Login.vue'),
+        props: true,
+        meta: { requiresGuest: true }
     },
     {
-      path: "/login",
-      name: "Login",
-      component: () => import('../views/Login.vue'),
-      props: true,
-      meta: { requireGuest: true }
+        path: "/logout",
+        name: "Logout",
+        component: () => import('../views/Logout.vue'),
+        meta: { requiresAuth: true }
     },
-  ],
+    {
+        path: "/:pathMatch(.*)*",
+        name: "NotFound",
+        component: () => import('../views/NotFound.vue')
+    }
+],
 })
 
 router.beforeEach((to, from) => {
-  const authStore = useAuthStore()
+    const authStore = useAuthStore()
 
-  if (to.meta.requiresAuth) {
-    if (!authStore.token || isTokenExpired(authStore.token)) {
-      authStore.logout()
-      return { name: 'Login' }
+    if (to.meta.requiresAuth) {
+        if (isTokenExpired(authStore.token)) {
+            authStore.logout()
+            return { name: 'Login' }
+        }
     }
-  }
 
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    return { name: "Login" }
-  }
+    if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+        return { name: "Login" }
+    }
 
-  if (to.meta.requiresGuest && authStore.isAuthenticated) {
-    return { name: "Home" }
-  }
+    if (to.meta.requiresGuest && authStore.isAuthenticated) {
+        return { name: "Home" }
+    }
 
-  return true
+    return true
 })
 
 export default router

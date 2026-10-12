@@ -896,4 +896,5 @@
         transition: none;
     }
 }
+
 </style>

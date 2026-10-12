@@ -1,12 +1,12 @@
 <template>
     <div>
-        <h1>Room id {{ room_id }}</h1>
+        <p>Room</p>
     </div>
 </template>
 
 <script>
     export default {
-        props: ['room_id']
+        
     }
 </script>
 
