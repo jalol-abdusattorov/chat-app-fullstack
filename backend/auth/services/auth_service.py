@@ -40,7 +40,7 @@ def user_id_from_token(token: str) -> str | None:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except jwt.PyJWTError:
         return None
-    return payload.get("uid")
+    return payload.get("sub")
 
 def get_current_user_id(
     creds: HTTPAuthorizationCredentials = Depends(bearer_scheme),

@@ -259,8 +259,6 @@ import { useUsersStore } from '../stores/UsersStore';
 
                 try {
                     const response = await usersStore.readMessages(props.room_id, seq)
-                    await roomsStore.getUserRooms(authStore.user.id)
-
                     if (!response.ok) {
                         lastSentRead = 0
                     }

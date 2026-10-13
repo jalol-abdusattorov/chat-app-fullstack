@@ -8,7 +8,7 @@ swagger_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def check_owner(request: Request, user_id: str):
-    if request.state.user.get('uid') != user_id:
+    if request.state.user.get('sub') != user_id:
         raise HTTPException(status_code=403, detail="Permission denied, not the owner of the account")
 
 def has_user_joined_the_room(user_id: str, room_id: str) -> bool:

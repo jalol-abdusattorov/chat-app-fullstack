@@ -48,7 +48,7 @@ def create_account(
 
     access_token_expires = timedelta(minutes=1440)
     access_token = create_access_token(
-        data={'sub': new_user['email'], 'uid': str(inserted_id)},
+        data={'sub': str(inserted_id), 'email': new_user['email']},
         expires_delta=access_token_expires
     )
 
@@ -98,14 +98,10 @@ def get_user_username(
 
 
 # AUTHORIZED
-@router.get("/users/get-user-rooms/{user_id}")
+@router.get("/users/get-user-rooms")
 def get_user_rooms(
-    user_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)],
+    user_id: str = Depends(get_current_user_id),
 ):
-    check_owner(request, user_id)
-
     try:
         uid = ObjectId(user_id)
     except bson.errors.InvalidId:
