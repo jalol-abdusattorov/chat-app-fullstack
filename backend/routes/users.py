@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from datetime import datetime as dt, timedelta, timezone
 
 from auth.utils.auth_utils import get_password_hash
-from auth.services.auth_service import create_access_token
+from auth.services.auth_service import create_access_token, get_current_user_id
 from auth.models.token import Token
-from routes.rooms import is_user_in_room, is_user_online_check
+from routes.rooms import is_user_online_check
 from models import UsersRequest
-from db import users_collection, rooms_collection, messages_collection, room_members_collection
-from routes.route_utils import check_owner, count_user_unread_messages, mark_read, swagger_bearer_scheme, get_room_last_message
+from db import users_collection, rooms_collection, room_members_collection
+from routes.route_utils import check_owner, count_user_unread_messages, has_user_joined_the_room, mark_read, swagger_bearer_scheme, get_room_last_message
 
 
 invalid_id_exception = HTTPException(status_code=403, detail="invalid id")
@@ -126,7 +126,7 @@ def get_user_rooms(
         else:
             dct['name'] = room['name']
 
-        dct['last_message'] = get_room_last_message(dct['room_id'])
+        dct['last_message'] = get_room_last_message(dct['room_id'], uid)
         dct['unread_count'] = count_user_unread_messages(dct['room_id'], uid)
         dct['room_id'] = str(dct['room_id'])
 
@@ -134,31 +134,34 @@ def get_user_rooms(
 
 
 # AUTHORIZED AND IN ROOM CHECK
-@router.put("/users/read-messages/{user_id}")
+@router.put("/users/read-messages")
 def read_messages(
-    user_id: str,
     room_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)],
     seq: int = Query(gt=0),
+    user_id: str = Depends(get_current_user_id),
 ):
-    check_owner(request, user_id)
-
-    if not is_user_in_room(user_id, room_id):
-        raise HTTPException(status_code=403, detail="User not in room")
-
     try:
         uid = ObjectId(user_id)
         rid = ObjectId(room_id)
     except bson.errors.InvalidId:
         raise invalid_id_exception
 
+    if not has_user_joined_the_room(user_id, room_id):
+        raise HTTPException(status_code=403, detail="User hasn't joined the room")
+
+    room = rooms_collection.find_one({ "_id": rid }, { "last_seq": 1 })
+    if not room:
+        raise room_not_found_exception
+
+    seq = min(seq, room['last_seq'])
+
     unread_msgs_before = count_user_unread_messages(rid, uid)
     mark_read(rid, uid, seq)
     unread_msgs = count_user_unread_messages(rid, uid)
 
     return {
-        'read_messages_count': unread_msgs_before - unread_msgs
+        'read_messages_count': unread_msgs_before - unread_msgs,
+        'ok': True
     }
 
 

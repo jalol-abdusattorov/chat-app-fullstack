@@ -11,14 +11,10 @@ routes: [
         meta: { requiresAuth: true },
         children: [
             {
-                path: "",
-                name: "ChatSideBar",
-                component: () => import('../components/ChatSideBar.vue')
-            },
-            {
                 path: ":room_id",
                 name: "ChatRoom",
-                component: () => import('../views/Room.vue')
+                component: () => import('../views/Room.vue'),
+                props: true
             }
         ]
     },

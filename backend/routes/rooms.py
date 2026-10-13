@@ -2,10 +2,11 @@ from typing import Annotated
 import bson
 from bson import ObjectId
 from datetime import datetime as dt, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request, status, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, WebSocket, WebSocketDisconnect
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from auth.services.auth_service import user_id_from_token
 from models import AddUsersRequest, RemoveUsersRequest, RoomRequest
 from db import users_collection, rooms_collection, messages_collection, room_members_collection
 from routes.route_utils import swagger_bearer_scheme, check_owner
@@ -36,10 +37,17 @@ def get_online_users(room_id: str):
     return active_users
 
 def is_user_online_check(user_id: str):
-    for room in manager.active_connections:
-        for _id in room.values():
+    for connections in manager.active_connections.values():
+        for _id in connections.values():
             if _id == user_id:
                 return True
+
+    return False
+
+def is_user_online_in_room(user_id: str, room_id: str):
+    for _id in manager.active_connections.get(room_id, {}).values():
+        if _id == user_id:
+            return True
 
     return False
 
@@ -245,78 +253,63 @@ def create_room(
     return {"room_id": str(room_id)}
 
 
-    # try:
-    #     user_id = ObjectId(user_id)
-    #     user = users_collection.find_one({ "_id": user_id })
-    #     if not user:
-    #         raise HTTPException(status_code=404, detail=f"User not found '{str(user_id)}'")
-    #     if room.room_type == 'private' and len(room.room_members) != 2:
-    #         raise HTTPException(status_code=403, detail="Cannot add more/less than 2 members")
-    #     if len(set(room.room_members)) != len(room.room_members):
-    #         raise HTTPException(status_code=403, detail="Cannot have duplicate users")
+# AUTHORIZED
+@router.get("/rooms/{room_id}")
+def get_room_details(
+    room_id: str,
+    user_id: str,
+    request: Request,
+    _: Annotated[str, Depends(swagger_bearer_scheme)]
+):
+    check_owner(request, user_id)
 
-    #     if room.room_type == "private":
-    #         new_room = {
-    #             'name': None,
-    #             'description': room.description,
-    #             'type': room.room_type,
-    #             'owner_id': None,
-    #             'last_seq': 0,
-    #             'created_at': dt.now(timezone.utc)
-    #         }
+    try:
+        rid = ObjectId(room_id)
+        uid = ObjectId(user_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
 
-    #     elif room.room_type == "group":
-    #         new_room = {
-    #             'name': room.name,
-    #             'description': room.description,
-    #             'type': room.room_type,
-    #             'owner_id': user_id,
-    #             'last_seq': 0,
-    #             'created_at': dt.now(timezone.utc)
-    #         }
-    #     else:
-    #         raise HTTPException(status_code=403, detail="Invalid room type")
+    member = room_members_collection.find_one({ "room_id": rid, "user_id": uid })
+    if not member:
+        raise HTTPException(status_code=403, detail="User isn't a member of the room")
 
-    #     if room.room_type == 'private':
-    #         first_member = room_members_collection.find({ "user_id": user_id })
-    #         second_member = room_members_collection.find({ "user_id": ObjectId(room.room_members[1]) })
-    #         second_member_joined_rooms = [j['room_id'] for j in second_member]
+    room = rooms_collection.find_one({ '_id': rid })
+    if not room:
+        raise room_not_found_exception
 
-    #         for i in first_member:
-    #             if i['room_id'] in second_member_joined_rooms:
-    #                 room = rooms_collection.find_one({ "_id": i['room_id'] })
-    #                 if room.get('type') == 'private':
-    #                     raise HTTPException(status_code=403, detail="Room already created")
+    cursor = room_members_collection.aggregate([
+        {
+            '$match': {
+                'room_id': rid
+            }
+        },
+        {
+            '$group': {
+                '_id': None, 
+                'member_count': {
+                    '$sum': 1
+                }
+            }
+        }
+    ])
 
-    #                 break
+    if room.get('type') == 'private':
+        other_member = room_members_collection.find_one({ "room_id": rid, "user_id": { "$ne": uid } }, { "user_id": 1 })
 
-    #     room_id = rooms_collection.insert_one(new_room).inserted_id
+        if other_member:
+            other_user = users_collection.find_one({ "_id": other_member['user_id'] }, { 'display_name': 1 })
 
-    #     all_members = []
-    #     for member_id in room.room_members:
-    #         member_id = ObjectId(member_id)
-    #         member = users_collection.find_one({ "_id": member_id })
-    #         if not member:
-    #             rooms_collection.delete_one({ "_id": room_id })
-    #             raise HTTPException(status_code=404, detail=f"User not found '{str(member_id)}'")
+            if other_user:
+                room['other_member'] = other_user['display_name']
 
-    #         new_member = {
-    #             'room_id': room_id,
-    #             'user_id': member_id,
-    #             'role': 'owner' if member_id == user_id else 'owner' if room.room_type == 'private' else 'member',
-    #             'last_read_seq': 0,
-    #             'joined_seq': 0,
-    #             'joined_at': dt.now(timezone.utc)
-    #         }
-    #         all_members.append(new_member)
+    room['_id'] = str(room['_id'])
+    room['member_count'] = list(cursor)[0]['member_count']
+    room['owner_id'] = str(room['owner_id'])
 
-
-    #     room_members_collection.insert_many(all_members)
-
-    #     return {"room_id": str(room_id)}
-
-    # except bson.errors.InvalidId:
-    #     raise invalid_id_exception
+    return {
+        'status': 'success',
+        'room': room
+    }
 
 
 # AUTHORIZED AND OWNER CHECK
@@ -568,8 +561,7 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket, user_id: str, room_id: str):
         has_user_joined = self.is_user_a_member(user_id, room_id)
         if not has_user_joined:
-            print("User hasn't joined the room yet")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User hasn't joined the room")
             return False
 
         await websocket.accept()
@@ -607,15 +599,11 @@ class ConnectionManager:
             uid = ObjectId(user_id)
             rid = ObjectId(room_id)
         except bson.errors.InvalidId:
-            print("Invalid ID")
             return False
 
         room = rooms_collection.find_one({ "_id": rid })
         user = users_collection.find_one({ "_id": uid })
         if not room or not user:
-            print(f'room_id: {str(rid)}')
-            print(f'user_id: {str(uid)}')
-            print("User or Room not found")
             return False
 
         member = room_members_collection.find_one({ 'room_id': rid, 'user_id': uid })
@@ -629,17 +617,18 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-@router.websocket("/ws/{user_id}/{room_id}")
+@router.websocket("/ws/{room_id}")
 async def websocket(
-    user_id: str,
     room_id: str,
     websocket: WebSocket,
+    token: str | None = Query(None),
 ):
+    user_id = user_id_from_token(token) if token else None
     try:
         uid = ObjectId(user_id)
         rid = ObjectId(room_id)
     except bson.errors.InvalidId:
-        await websocket.close(code=1008)
+        await websocket.close(code=1008, reason='invalid id')
         return
 
     is_allowed = await manager.connect(websocket, user_id, room_id)
@@ -680,14 +669,24 @@ async def websocket(
             result = messages_collection.insert_one(doc)
 
             # Payload sended to all connections
+            sender = users_collection.find_one(
+                {"_id": uid}, {"username": 1, "display_name": 1}
+            )
+
             payload = {
                 "type": "new_message",
-                "_id": str(result.inserted_id),
+                "id": str(result.inserted_id),
                 "room_id": room_id,
-                "sender_id": user_id,
                 "seq": seq,
                 "body": text,
                 "created_at": now.isoformat(),
+                "edited_at": None,
+                "deleted": False,
+                "sender": {
+                    "id": str(uid),
+                    "username": sender.get("username") if sender else None,
+                    "display_name": sender.get("display_name") if sender else "Deleted user",
+                },
             }
 
             await manager.broadcast_to_room(room_id, payload)

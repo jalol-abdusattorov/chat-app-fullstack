@@ -47,10 +47,30 @@ export const useUsersStore = defineStore('usersStore', () => {
         }
     }
 
+    async function readMessages(roomId, seq) {
+        loading.value = true
+        error.value = null
+
+        try {
+            const response = await api.put(`/users/read-messages`, null, { params: { room_id: roomId, seq: seq } })
+
+            return response
+        } catch (exc) {
+            error.value = 
+                exc.response?.data?.detail ||
+                exc.response?.data?.message ||
+                "Failed to fetch"
+            throw exc
+        } finally {
+            loading.value = false
+        }
+    }
+
     return {
         loading,
         error,
         getUserDetails,
         getUserUsername,
+        readMessages,
     }
 })

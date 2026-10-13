@@ -1,18 +1,21 @@
 <template>
     <div class="main-chat-layout">
-        <ChatSideBar :rooms="userRooms" />
+        <ChatSideBar />
 
-        <div class="chat-main-content">
+		<router-view :key="$route.params.room_id" />
+
+		<div class="chat-main-content" v-if="!inRoom">
             <p style="margin: auto; color: #94a3b8;">Select a conversation to start chatting</p>
         </div>
     </div>
 </template>
 
 <script>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRoomsStore } from '../stores/RoomsStore'
 import ChatSideBar from '../components/ChatSideBar.vue';
+import { useRoute } from 'vue-router';
 
 export default {
 	components: { ChatSideBar },
@@ -20,52 +23,53 @@ export default {
     	const authStore = useAuthStore()
 		const roomsStore = useRoomsStore()
 
-		const userRooms = ref([])
+		const route = useRoute()
+		const inRoom = computed(() => {
+			const url = route.path
+			if (url.slice(1)) {
+				return true
+			}
+			return false
+		})
 
 		const formatDate = (date) => {
-		if (!date) return
+			if (!date) return
 
-		const monthMap = {
-			'01': 'Jan',
-			'02': 'Feb',
-			'03': 'Mar',
-			'04': 'Apr',
-			'05': 'May',
-			'06': 'Jun',
-			'07': 'Jul',
-			'08': 'Aug',
-			'09': 'Sep',
-			'10': 'Oct',
-			'11': 'Nov',
-			'12': 'Dec'
-		}
+			const monthMap = {
+				'01': 'Jan',
+				'02': 'Feb',
+				'03': 'Mar',
+				'04': 'Apr',
+				'05': 'May',
+				'06': 'Jun',
+				'07': 'Jul',
+				'08': 'Aug',
+				'09': 'Sep',
+				'10': 'Oct',
+				'11': 'Nov',
+				'12': 'Dec'
+			}
 
-		date = date.substring(0, 10)
+			date = date.substring(0, 10)
 
-		const month = date.slice(5, 7)
-		const day = date.slice(-2)
+			const month = date.slice(5, 7)
+			const day = date.slice(-2)
 
-		return `${day} ${monthMap[month]}`
+			return `${day} ${monthMap[month]}`
 		}
 
 		async function loadUserRooms() {
-		userRooms.value = await roomsStore.getUserRooms(
-			authStore.user.id
-		)
-
-		if (userRooms.value?.rooms) {
-			userRooms.value = userRooms.value.rooms
-		}
+			await roomsStore.getUserRooms(authStore.user.id)
 		}
 
 		onMounted(async () => {
-		await loadUserRooms()
+			await loadUserRooms()
 		})
 
 		return {
-		roomsStore,
-		userRooms,
-		formatDate,
+			roomsStore,
+			formatDate,
+			inRoom,
 		}
 	}
 }
