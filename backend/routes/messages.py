@@ -55,34 +55,28 @@ def serialize_with_sender(m: dict, users_map: dict) -> dict:
 @router.get("/room/{room_id}/messages")
 def get_room_messages(
     room_id: str,
-    user_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)],
+    user_id: str = Depends(get_current_user_id),
     limit: int = Query(50, ge=1, le=100),
     before_seq: int | None = None,
 ):
-    check_owner(request, user_id)
-
-    # if not is_user_in_room(user_id, room_id):
-    #     raise HTTPException(status_code=403, detail="User not in room")
-
     try:
         rid = ObjectId(room_id)
-        uid = ObjectId(user_id)
     except bson.errors.InvalidId:
         raise invalid_id_exception
+
+    if not has_user_joined_the_room(user_id, room_id):
+        raise HTTPException(status_code=403, detail="User not in room")
 
     query = {'room_id': rid}
     if before_seq is not None:
         query['seq'] = {"$lt": before_seq}
 
     docs = list(messages_collection.find(query).sort('seq', -1).limit(limit))
-
-    users_map = get_users_map({ m['sender_id'] for m in docs })
+    users_map = get_users_map({m['sender_id'] for m in docs})
 
     return {
         "messages": [serialize_with_sender(m, users_map) for m in docs],
-        "next_before_seq": docs[-1]['seq'] if len(docs) == limit else None
+        "next_before_seq": docs[-1]['seq'] if len(docs) == limit else None,
     }
 
 

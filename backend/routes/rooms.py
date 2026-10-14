@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, W
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from auth.services.auth_service import user_id_from_token
+from auth.services.auth_service import get_current_user_id, user_id_from_token
 from models import AddUsersRequest, RemoveUsersRequest, RoomRequest
 from db import users_collection, rooms_collection, messages_collection, room_members_collection
 from routes.route_utils import swagger_bearer_scheme, check_owner
@@ -143,14 +143,13 @@ def remove_people_from_room(candidate_uids: list[ObjectId], room: dict, rid: Obj
 
 
 # AUTHORIZED
-@router.post("/rooms/create-room/{user_id}")
+@router.post("/rooms/create-room")
 def create_room(
-    user_id: str,
     room: RoomRequest,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    user_id: str = Depends(get_current_user_id),
 ):
-    check_owner(request, user_id)
+    room_data = room.model_dump()
+    room_data['user_id'] = user_id
 
     try:
         owner_id = ObjectId(user_id)
@@ -250,7 +249,7 @@ def create_room(
         room_members_collection.delete_many({ "room_id": room_id })
         raise
 
-    return {"room_id": str(room_id)}
+    return {"room_id": str(room_id), "ok": True}
 
 
 # AUTHORIZED
@@ -578,7 +577,7 @@ class ConnectionManager:
             try:
                 await connection.send_json(payload)
             except Exception:
-                dead_cons.append(self.connect)
+                dead_cons.append(connection)
 
         for connection in dead_cons:
             await self.disconnect(connection, room_id)

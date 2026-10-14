@@ -1,115 +1,117 @@
 <template>
-    <div class="chat-room" v-if="room">
-        <div class="chat-header">
-            <h3>{{ room.name || room.other_member }}</h3>
-            <p>{{ room.member_count }} members</p>
-        </div>
+    <Transition name="room-leave">
+        <div class="chat-room" v-if="room && !isLeaving" key="chat-room">
+            <div class="chat-header">
+                <h3>{{ room.name || room.other_member }}</h3>
+                <p>{{ room.member_count }} members</p>
+            </div>
 
-        <div class="message-log" ref="messageLogRef" @scroll="onScroll">
-            <!-- Empty state when room is fresh and has no messages -->
-            <div v-if="messages && messages.length === 0" class="empty-state">
-                <div class="empty-icon">💬</div>
-                <p>No messages yet. Start the conversation!</p>
+            <div class="message-log" ref="messageLogRef" @scroll="onScroll">
+                <!-- Empty state when room is fresh and has no messages -->
+                <div v-if="messages && messages.length === 0" class="empty-state">
+                    <div class="empty-icon">💬</div>
+                    <p>No messages yet. Start the conversation!</p>
+                </div>
+
+                <div
+                    v-for="m in messages"
+                    :key="m.id"
+                    class="message-row"
+                    :class="{ 'my-message': isMyMessage(m) }"
+                    @contextmenu.prevent="openMessageMenu($event, m)"
+                >
+                    <div class="message-bubble" v-if="m.body">
+                        <!-- Sender name for group chats (other users only) -->
+                        <div
+                            class="sender-name"
+                            :class="{
+                                'room-owner': m.sender?.id == room.owner_id
+                                && m.sender?.id != authStore.user.id
+                            }"
+                            v-if="room.type !== 'private' && !isMyMessage(m)"
+                        >
+                            {{ m.sender?.display_name || 'Member' }}
+                        </div>
+
+                        <div v-if="editingMessageId === (m.id)" class="message-edit">
+                            <textarea
+                                v-model="editDraft"
+                                class="edit-input"
+                                rows="2"
+                                autofocus
+                                @keydown.enter.exact.prevent="saveEditedMessage"
+                                @keydown.escape.stop="cancelEditMessage"
+                            ></textarea>
+
+                            <div class="edit-actions">
+                                <button
+                                    type="button"
+                                    class="edit-save"
+                                    :disabled="!editDraft.trim()"
+                                    @click.stop="saveEditedMessage"
+                                >
+                                    Save
+                                </button>
+
+                                <button
+                                    type="button"
+                                    class="edit-cancel"
+                                    @click.stop="cancelEditMessage"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+
+                        <div v-else class="message-text">
+                            {{ m.body }}
+                        </div>
+
+                        <!-- Modern Timestamp & Edited Meta Container -->
+                        <div class="message-meta">
+                            <span v-if="m.edited_at" class="edited-indicator">edited</span>
+                            <span class="message-time">
+                                {{ m.created_at ? m.created_at.slice(11, 16) : '' }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="message-bubble deleted" v-else>
+                        This message was deleted
+                    </div>
+                </div>
             </div>
 
             <div
-                v-for="m in messages"
-                :key="m.id"
-                class="message-row"
-                :class="{ 'my-message': isMyMessage(m) }"
-                @contextmenu.prevent="openMessageMenu($event, m)"
-            >
-                <div class="message-bubble" v-if="m.body">
-                    <!-- Sender name for group chats (other users only) -->
-                    <div
-                        class="sender-name"
-                        :class="{
-                            'room-owner': m.sender?.id == room.owner_id
-                            && m.sender?.id != authStore.user.id
-                        }"
-                        v-if="room.type !== 'private' && !isMyMessage(m)"
-                    >
-                        {{ m.sender?.display_name || 'Member' }}
-                    </div>
-
-                    <div v-if="editingMessageId === (m.id)" class="message-edit">
-                        <textarea
-                            v-model="editDraft"
-                            class="edit-input"
-                            rows="2"
-                            autofocus
-                            @keydown.enter.exact.prevent="saveEditedMessage"
-                            @keydown.escape.stop="cancelEditMessage"
-                        ></textarea>
-
-                        <div class="edit-actions">
-                            <button
-                                type="button"
-                                class="edit-save"
-                                :disabled="!editDraft.trim()"
-                                @click.stop="saveEditedMessage"
-                            >
-                                Save
-                            </button>
-
-                            <button
-                                type="button"
-                                class="edit-cancel"
-                                @click.stop="cancelEditMessage"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-
-                    <div v-else class="message-text">
-                        {{ m.body }}
-                    </div>
-
-                    <!-- Modern Timestamp & Edited Meta Container -->
-                    <div class="message-meta">
-                        <span v-if="m.edited_at" class="edited-indicator">edited</span>
-                        <span class="message-time">
-                            {{ m.created_at ? m.created_at.slice(11, 16) : '' }}
-                        </span>
-                    </div>
-                </div>
-                <div class="message-bubble deleted" v-else>
-                    This message was deleted
-                </div>
+                v-if="contextMenu.visible"
+                class="message-context-menu"
+                :style="{
+                    left: `${contextMenu.x}px`,
+                    top: `${contextMenu.y}px`
+                }"
+                @contextmenu.prevent
+                >
+                <button
+                    class="context-menu-item delete-item"
+                    @click.stop="handleDeleteMessage"
+                >
+                    <span>🗑️</span>
+                    Delete
+                </button>
+                <button
+                    class="context-menu-item edit-item"
+                    @click.stop="startEditMessage"
+                >
+                    <span>✏️</span>
+                    Edit
+                </button>
             </div>
-        </div>
 
-        <div
-            v-if="contextMenu.visible"
-            class="message-context-menu"
-            :style="{
-                left: `${contextMenu.x}px`,
-                top: `${contextMenu.y}px`
-            }"
-            @contextmenu.prevent
-            >
-            <button
-                class="context-menu-item delete-item"
-                @click.stop="handleDeleteMessage"
-            >
-                <span>🗑️</span>
-                Delete
-            </button>
-            <button
-                class="context-menu-item edit-item"
-                @click.stop="startEditMessage"
-            >
-                <span>✏️</span>
-                Edit
-            </button>
+            <form @submit.prevent="submit" class="chat-form">
+                <input v-model="draft" placeholder="Type a message..." />
+                <button :disabled="!draft.trim()">Send</button>
+            </form>
         </div>
-
-        <form @submit.prevent="submit" class="chat-form">
-            <input v-model="draft" placeholder="Type a message..." />
-            <button :disabled="!draft.trim()">Send</button>
-        </form>
-    </div>
+    </Transition>
 </template>
 
 <script>
@@ -118,6 +120,7 @@ import { useRoomsStore } from '../stores/RoomsStore';
 import { useAuthStore } from '../stores/auth';
 import { useMessagesStore } from '../stores/MessagesStore';
 import { useUsersStore } from '../stores/UsersStore';
+import { useRouter } from 'vue-router';
 
     export default {
         props: ['room_id'],
@@ -126,6 +129,7 @@ import { useUsersStore } from '../stores/UsersStore';
             const roomsStore = useRoomsStore()
             const messagesStore = useMessagesStore()
             const usersStore = useUsersStore()
+            const router = useRouter()
             let socket = null
 
             const draft = ref('')
@@ -134,6 +138,8 @@ import { useUsersStore } from '../stores/UsersStore';
             const nextBeforeSeq = ref(null)
             const lastSeq = ref(0)
             const messageLogRef = ref(null)
+            const isLeaving = ref(false)
+            let leaveTimer = null
             let readTimer = null
             let lastSentRead = 0
             let loadingOlder = false
@@ -305,6 +311,25 @@ import { useUsersStore } from '../stores/UsersStore';
                 m.body = null
                 m.deleted = true
             }
+            function handleKeydown(event) {
+                if (event.key !== 'Escape') return
+
+                // If editing a message, cancel editing first.
+                if (editingMessageId.value !== null) {
+                    cancelEditMessage()
+                    return
+                }
+
+                // Prevent triggering the animation multiple times.
+                if (isLeaving.value) return
+
+                isLeaving.value = true
+
+                // Wait for the slide-out animation to finish.
+                leaveTimer = setTimeout(() => {
+                    router.push('/')
+                }, 250)
+            }
             
             // Helper to robustly check if the message belongs to the current user
             function isMyMessage(m) {
@@ -357,6 +382,7 @@ import { useUsersStore } from '../stores/UsersStore';
             }
 
             onMounted(async () => {
+                document.addEventListener('keydown', handleKeydown)
                 document.addEventListener('visibilitychange', markReadSoon)
                 await loadRoomDetails()
                 await loadInitial()
@@ -399,12 +425,19 @@ import { useUsersStore } from '../stores/UsersStore';
                 markReadSoon()
             }
 
-            onBeforeUnmount(() => {
+            onBeforeUnmount(async () => {
                 socket?.close()
                 clearTimeout(readTimer)
+                clearTimeout(leaveTimer)
+                document.removeEventListener('keydown', handleKeydown)
                 document.removeEventListener('visibilitychange', markReadSoon)
                 document.removeEventListener('click', closeMessageMenu)
                 document.removeEventListener('keydown', closeMessageMenu)
+
+                const data = await roomsStore.getUserRooms()
+                if (data?.ok != true) {
+                    console.log(data)
+                }
             })
 
             return {
@@ -426,6 +459,7 @@ import { useUsersStore } from '../stores/UsersStore';
                 startEditMessage,
                 saveEditedMessage,
                 cancelEditMessage,
+                isLeaving,
             }
         }
     }
@@ -712,5 +746,24 @@ import { useUsersStore } from '../stores/UsersStore';
 .chat-form button:disabled {
     background-color: #cbd5e1;
     cursor: not-allowed;
+}
+
+/* Room exit animation */
+.room-leave-leave-active {
+    transition:
+        transform 250ms ease-in,
+        opacity 250ms ease-in;
+}
+
+.room-leave-leave-to {
+    transform: translateX(100%);
+    opacity: 0;
+}
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    .room-leave-leave-active {
+        transition-duration: 0.01ms;
+    }
 }
 </style>

@@ -5,6 +5,7 @@ import api from "../api/axios";
 export const useUsersStore = defineStore('usersStore', () => {
     const loading = ref(false)
     const error = ref(null)
+    const searchResults = ref([])
 
     async function getUserDetails(user_id) {
         loading.value = true
@@ -66,11 +67,34 @@ export const useUsersStore = defineStore('usersStore', () => {
         }
     }
 
+    async function searchUsers(searchingName) {
+        loading.value = true
+        error.value = null
+
+        try {
+            const response = await api.get(`/users/search/${searchingName}`)
+            const data = response.data
+            searchResults.value = data.result || data.results
+
+            return data
+        } catch (exc) {
+            error.value = 
+                exc.response?.data?.detail ||
+                exc.response?.data?.message ||
+                "Failed to fetch"
+            throw exc
+        } finally {
+            loading.value = false
+        }
+    }
+
     return {
         loading,
         error,
         getUserDetails,
         getUserUsername,
         readMessages,
+        searchUsers,
+        searchResults,
     }
 })

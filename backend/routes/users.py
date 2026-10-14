@@ -11,7 +11,7 @@ from auth.services.auth_service import create_access_token, get_current_user_id
 from auth.models.token import Token
 from routes.rooms import is_user_online_check
 from models import UsersRequest
-from db import users_collection, rooms_collection, room_members_collection
+from db import users_collection, rooms_collection, room_members_collection, messages_collection
 from routes.route_utils import check_owner, count_user_unread_messages, has_user_joined_the_room, mark_read, swagger_bearer_scheme, get_room_last_message
 
 
@@ -55,6 +55,112 @@ def create_account(
     return {'user_id': str(inserted_id), 'token': Token(access_token=access_token, token_type='bearer')}
 
 
+# AUTHORIZED
+@router.get("/users/get-user-rooms")
+def get_user_rooms(
+    user_id: str = Depends(get_current_user_id),
+):
+    try:
+        uid = ObjectId(user_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
+
+    memberships = list(room_members_collection.find(
+        { "user_id": uid },
+        { "_id": 0, "room_id": 1, "last_read_seq": 1 },
+    ))
+    if not memberships:
+        return {"rooms": []}
+
+    room_ids = [m["room_id"] for m in memberships]
+
+    rooms = {}
+    for room in rooms_collection.aggregate([
+        {
+            "$match": {
+                "_id": { "$in": room_ids }
+            }
+        },
+        {
+            "$project": { "type": 1, "name": 1, "last_seq": 1 }
+        },
+        {
+            "$lookup": {
+                "from": messages_collection.name,
+                "let": { "rid": "$_id" },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    { "$eq": [ "$room_id", "$$rid" ] },
+                                    { "$eq": [ "$deleted", False ] },
+                                ]
+                            }
+                        }
+                    },
+                    { "$sort": { "seq": -1 } },
+                    { "$limit": 1 },
+                    { "$project": { "_id": 0, "body": 1, "created_at": 1, "sender_id": 1 } },
+                ],
+                "as": "last_message",
+            }
+        },
+    ]):
+        rooms[room["_id"]] = room
+
+    private_ids = [rid for rid, r in rooms.items() if r["type"] == "private"]
+    other_user_of = {}
+    if private_ids:
+        for m in room_members_collection.find(
+            { "room_id": { "$in": private_ids }, "user_id": { "$ne": uid } },
+            { "_id": 0, "room_id": 1, "user_id": 1 },
+        ):
+            other_user_of[m["room_id"]] = m["user_id"]
+
+    needed_user_ids = set(other_user_of.values())
+    for r in rooms.values():
+        if r["last_message"]:
+            needed_user_ids.add(r["last_message"][0]["sender_id"])
+
+    names = {}
+    if needed_user_ids:
+        names = {
+            u["_id"]: u["display_name"]
+            for u in users_collection.find(
+                {"_id": {"$in": list(needed_user_ids)}},
+                {"display_name": 1},
+            )
+        }
+
+    result = []
+    for m in memberships:
+        room = rooms.get(m["room_id"])
+        if room is None:
+            continue
+
+        if room["type"] == "private":
+            name = names.get(other_user_of.get(m["room_id"]))
+        else:
+            name = room["name"]
+
+        last_message = None
+        if room["last_message"]:
+            lm = room["last_message"][0]
+            lm["display_name"] = "you" if lm["sender_id"] == uid else names.get(lm["sender_id"])
+            lm["sender_id"] = str(lm["sender_id"])
+            last_message = lm
+
+        result.append({
+            "room_id": str(m["room_id"]),
+            "name": name,
+            "last_message": last_message,
+            "unread_count": room["last_seq"] - m["last_read_seq"],
+        })
+
+    return {"rooms": result, "ok": True}
+
+
 # AUTHOIRZED
 @router.get('/users/{user_id}')
 def get_user(
@@ -81,8 +187,7 @@ def get_user(
 @router.get("/users/{user_id}/display_name")
 def get_user_username(
     user_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    current_user_id: str = Depends(get_current_user_id)
 ):
     try:
         uid = ObjectId(user_id)
@@ -90,43 +195,13 @@ def get_user_username(
         raise invalid_id_exception
 
     user = users_collection.find_one({ "_id": uid }, { "display_name": 1 })
+    if not user:
+        raise user_not_found_exception
 
     return {
         'user_id': user_id,
         'display_name': user['display_name']
     }
-
-
-# AUTHORIZED
-@router.get("/users/get-user-rooms")
-def get_user_rooms(
-    user_id: str = Depends(get_current_user_id),
-):
-    try:
-        uid = ObjectId(user_id)
-    except bson.errors.InvalidId:
-        raise invalid_id_exception
-
-    user_joined_rooms = list(room_members_collection.find({ "user_id": uid }, { "_id": 0, "room_id": 1 }))
-
-    for dct in user_joined_rooms:
-        room = rooms_collection.find_one({ "_id": dct['room_id'] }, { "type": 1, "name": 1 })
-        
-        if room['type'] == 'private':
-            members = list(room_members_collection.find({ "room_id": dct['room_id'] }))
-            other_user = members[0]['user_id']
-            if members[0]['user_id'] == uid:
-                other_user = members[1]['user_id']
-
-            dct['name'] = users_collection.find_one({ "_id": other_user }, { 'display_name': 1 })['display_name']
-        else:
-            dct['name'] = room['name']
-
-        dct['last_message'] = get_room_last_message(dct['room_id'], uid)
-        dct['unread_count'] = count_user_unread_messages(dct['room_id'], uid)
-        dct['room_id'] = str(dct['room_id'])
-
-    return {'rooms': user_joined_rooms}
 
 
 # AUTHORIZED AND IN ROOM CHECK
@@ -165,10 +240,9 @@ def read_messages(
 @router.get("/users/search/{username}")
 def search_user_by_username(
     username: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    current_user_id: str = Depends(get_current_user_id),
 ):
-    # "Removes" some of the punctuations in order to not crash MongoDB
+    # "Removes" some of the punctuations in order to not crash MongoDB (e.g. user types "bo@b" -> "bo\@b")
     clean_username = re.escape(username.strip())
 
     cursor = users_collection.find({
@@ -190,8 +264,8 @@ def search_user_by_username(
         doc['_id'] = str(doc['_id'])
         del doc['email']
         del doc['password_hash']
-        del doc['joined_rooms']
 
+    # print(result)
     return {"result": result}
 
 

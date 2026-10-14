@@ -12,7 +12,6 @@
 
 <script>
 import { computed, onMounted } from 'vue'
-import { useAuthStore } from '../stores/auth'
 import { useRoomsStore } from '../stores/RoomsStore'
 import ChatSideBar from '../components/ChatSideBar.vue';
 import { useRoute } from 'vue-router';
@@ -20,7 +19,6 @@ import { useRoute } from 'vue-router';
 export default {
 	components: { ChatSideBar },
   	setup() {
-    	const authStore = useAuthStore()
 		const roomsStore = useRoomsStore()
 
 		const route = useRoute()
@@ -59,7 +57,7 @@ export default {
 		}
 
 		async function loadUserRooms() {
-			await roomsStore.getUserRooms(authStore.user.id)
+			await roomsStore.getUserRooms()
 		}
 
 		onMounted(async () => {
