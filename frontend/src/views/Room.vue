@@ -123,14 +123,13 @@ import { useUsersStore } from '../stores/UsersStore';
 import { useRouter } from 'vue-router';
 
     export default {
-        props: ['room_id'],
+        props: ['room_id', 'socket'],
         setup(props) {
             const authStore = useAuthStore()
             const roomsStore = useRoomsStore()
             const messagesStore = useMessagesStore()
             const usersStore = useUsersStore()
             const router = useRouter()
-            let socket = null
 
             const draft = ref('')
             const room = ref(null)
@@ -281,12 +280,15 @@ import { useRouter } from 'vue-router';
             }
 
             function sendMessage(text) {
-                if (!socket || socket.readyState !== WebSocket.OPEN) {
+                if (!roomsStore.socket || roomsStore.socket.readyState !== WebSocket.OPEN) {
                     console.warn('Socket not connected')
                     return false
                 }
 
-                socket.send(text)
+                roomsStore.socket.send(JSON.stringify({
+                    room_id: props.room_id,
+                    body: text,
+                }))
                 return true
             }
             function submit() {
@@ -297,19 +299,6 @@ import { useRouter } from 'vue-router';
 
             function findMessage(id) {
                 return messages.value.find(m => m.id === id)
-            }
-
-            function applyMessageUpdate(data) {
-                const m = findMessage(data.id)
-                if (!m) return
-                m.body = data.body
-                m.edited_at = data.edited_at
-            }
-            function applyMessageDelete(data) {
-                const m = findMessage(data.id)
-                if (!m) return
-                m.body = null
-                m.deleted = true
             }
             function handleKeydown(event) {
                 if (event.key !== 'Escape') return
@@ -381,41 +370,39 @@ import { useRouter } from 'vue-router';
                 }
             }
 
-            onMounted(async () => {
-                document.addEventListener('keydown', handleKeydown)
-                document.addEventListener('visibilitychange', markReadSoon)
-                await loadRoomDetails()
-                await loadInitial()
-                await nextTick()
-                scrollToBottom()
-                markReadSoon()
-                connectSocket()
+            function handleSocketMessage(event) {
+                let data
 
-                document.addEventListener('click', closeMessageMenu)
-                document.addEventListener('keydown', closeMessageMenu)
-            })
-
-            function connectSocket() {
-                const base = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000'
-
-                socket = new WebSocket(`${base}/ws/${props.room_id}?token=${encodeURIComponent(authStore.token)}`)
-
-                socket.onmessage = (event) => {
-                    const data = JSON.parse(event.data)
-                    if (data.type === 'new_message') onNewMessage(data)
-                    if (data.type === 'message_updated') applyMessageUpdate(data)
-                    if (data.type === 'message_deleted') applyMessageDelete(data)
-                    if (data.type === 'error') console.warn('WS error:', data.error)
+                try {
+                    data = JSON.parse(event.data)
+                } catch (error) {
+                    console.error("Invalid Websocket message", error)
                 }
 
-                socket.onerror = (e) => console.error('WebSocket error', e)
-                socket.onclose = (e) => console.log('WebSocket closed', e.code, e.reason)
+                if (data.room_id != props.room_id) return
+
+                if (data.type == 'new_message') onNewMessage(data)
+                if (data.type == 'message_updated') applyMessageUpdate(data)
+                if (data.type == 'message_deleted') applyMessageDelete(data)
+                if (data.type == 'error') console.warn("WebSocket error", data.error)
             }
 
+            function applyMessageUpdate(data) {
+                const m = findMessage(data.id)
+                if (!m) return
+                m.body = data.body
+                m.edited_at = data.edited_at
+            }
+            function applyMessageDelete(data) {
+                const m = findMessage(data.id)
+                if (!m) return
+                m.body = null
+                m.deleted = true
+            }
             async function onNewMessage(msg) {
                 if (!messages.value) return
                 if (msg.seq <= lastSeq.value) return
-
+                
                 const wasAtBottom = isAtBottom()
                 messages.value.push(msg)
                 lastSeq.value = msg.seq
@@ -425,19 +412,43 @@ import { useRouter } from 'vue-router';
                 markReadSoon()
             }
 
+            let activeSocket = null
+            onMounted(async () => {
+                document.addEventListener('keydown', handleKeydown)
+                document.addEventListener('visibilitychange', markReadSoon)
+                document.addEventListener('click', closeMessageMenu)
+                document.addEventListener('keydown', closeMessageMenu)
+
+                await loadRoomDetails()
+                await loadInitial()
+                await nextTick()
+                scrollToBottom()
+                markReadSoon()
+
+                activeSocket = roomsStore.socket
+                if (activeSocket) {
+                    activeSocket.addEventListener(
+                        'message',
+                        handleSocketMessage
+                    )
+                }
+            })
+
             onBeforeUnmount(async () => {
-                socket?.close()
                 clearTimeout(readTimer)
                 clearTimeout(leaveTimer)
                 document.removeEventListener('keydown', handleKeydown)
                 document.removeEventListener('visibilitychange', markReadSoon)
                 document.removeEventListener('click', closeMessageMenu)
                 document.removeEventListener('keydown', closeMessageMenu)
-
-                const data = await roomsStore.getUserRooms()
-                if (data?.ok != true) {
-                    console.log(data)
+                if (activeSocket) {
+                    activeSocket.removeEventListener(
+                        'message',
+                        handleSocketMessage
+                    )
                 }
+
+                await roomsStore.getUserRooms()
             })
 
             return {

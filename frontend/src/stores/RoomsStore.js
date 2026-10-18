@@ -7,6 +7,7 @@ export const useRoomsStore = defineStore('roomsStore', () => {
     const loading = ref(false)
     const error = ref(null)
     const rooms = ref([])
+    const socket = ref(null)
 
     async function getUserRooms() {
         loading.value = true
@@ -69,12 +70,39 @@ export const useRoomsStore = defineStore('roomsStore', () => {
         }
     }
 
+    function connectSocket() {
+        const authStore = useAuthStore()
+        if (
+            socket.value &&
+            (
+                socket.value.readyState == WebSocket.OPEN ||
+                socket.value.readyState == WebSocket.CONNECTING
+            )
+        ) {
+            return socket.value
+        }
+
+        const base = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000'
+
+        const ws = new WebSocket(
+            `${base}/ws?token=${encodeURIComponent(authStore.token)}`
+        )
+
+        ws.onerror = (e) => console.error('WebSocket error', e)
+        ws.onclose = (e) => console.log('WebSocket closed', e.code, e.reason)
+
+        socket.value = ws
+        return ws
+    }
+
     return {
         loading,
         error,
         rooms,
         getUserRooms,
         getRoomDetails,
+        socket,
         createRoom,
+        connectSocket,
     }
 })

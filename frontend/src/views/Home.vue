@@ -11,10 +11,11 @@
 </template>
 
 <script>
-import { computed, onMounted } from 'vue'
+import { computed, onBeforeMount, onMounted } from 'vue'
 import { useRoomsStore } from '../stores/RoomsStore'
 import ChatSideBar from '../components/ChatSideBar.vue';
 import { useRoute } from 'vue-router';
+import { useAuthStore } from '../stores/auth.js';
 
 export default {
 	components: { ChatSideBar },
@@ -60,8 +61,51 @@ export default {
 			await roomsStore.getUserRooms()
 		}
 
+		async function handleSocketMessage(event) {	
+			let data
+
+			try {
+				data = JSON.parse(event.data)
+			} catch (error) {
+				console.error("Invalid websocket message:", error)
+			}
+
+			if (data.type !== 'new_message') return
+
+
+			const idx = roomsStore.rooms.findIndex(r => r.room_id == data.room_id)
+			if (idx == -1) return
+
+			const room = roomsStore.rooms[idx]
+			room.last_message = {
+				sender_id: data.sender.id,
+				body: data.body,
+				created_at: data.created_at,
+				display_name: useAuthStore().user.id === data.sender.id ? 'you' : data.sender.display_name,
+			}
+
+			if (inRoom.value) return
+			room.unread_count++
+		}
+
+		let activeSocket = null
 		onMounted(async () => {
 			await loadUserRooms()
+			activeSocket = roomsStore.connectSocket()
+
+			activeSocket.addEventListener(
+				'message',
+				handleSocketMessage
+			)
+		})
+
+		onBeforeMount(() => {
+			if (activeSocket) {
+				activeSocket.removeEventListener(
+					'message',
+					handleSocketMessage
+				)
+			}
 		})
 
 		return {

@@ -9,7 +9,7 @@ from pymongo.errors import DuplicateKeyError
 from auth.services.auth_service import get_current_user_id, user_id_from_token
 from models import AddUsersRequest, RemoveUsersRequest, RoomRequest
 from db import users_collection, rooms_collection, messages_collection, room_members_collection
-from routes.route_utils import swagger_bearer_scheme, check_owner
+from routes.route_utils import has_user_joined_the_room, swagger_bearer_scheme, check_owner
 
 invalid_id_exception = HTTPException(status_code=403, detail="invalid id")
 room_not_found_exception = HTTPException(status_code=404, detail="Room not found")
@@ -553,7 +553,7 @@ def get_onine_people(
     return {"online_users": active_users}
 
 
-class ConnectionManager:
+class RoomConnectionManager:
     def __init__(self):      # { room_id: { WebSocket: user_id, ... } }
         self.active_connections: dict[str, dict[WebSocket, str]] = {}
 
@@ -567,22 +567,35 @@ class ConnectionManager:
         if room_id not in self.active_connections:
             self.active_connections[room_id] = { websocket: user_id }
         else:
-            self.active_connections[room_id][websocket] = user_id
+            if user_id not in self.active_connections[room_id].values():
+                self.active_connections[room_id][websocket] = user_id
 
         return True
 
     async def broadcast_to_room(self, room_id: str, payload: dict):
         dead_cons = []
+        sended_cons = []
         for connection in list(self.active_connections.get(room_id, [])):
             try:
                 await connection.send_json(payload)
+                sended_cons.append(connection)
             except Exception:
                 dead_cons.append(connection)
 
         for connection in dead_cons:
             await self.disconnect(connection, room_id)
 
-    async def disconnect(self, websocket, room_id):
+    async def disconnect(self, websocket: WebSocket, room_id: str | None = None):
+        if not room_id:
+            for rid, value in self.active_connections.items():
+                for ws in value:
+                    if ws == websocket:
+                        try:
+                            self.active_connections[rid].pop(websocket)
+                            return
+                        except:
+                            return
+
         connections = self.active_connections.get(room_id, [])
         if not connections:
             return
@@ -614,37 +627,44 @@ class ConnectionManager:
         return True
 
 
-manager = ConnectionManager()
+manager = RoomConnectionManager()
 
-@router.websocket("/ws/{room_id}")
+@router.websocket("/ws")
 async def websocket(
-    room_id: str,
     websocket: WebSocket,
     token: str | None = Query(None),
 ):
     user_id = user_id_from_token(token) if token else None
+
     try:
         uid = ObjectId(user_id)
-        rid = ObjectId(room_id)
+        user_rooms = list(room_members_collection.find({ "user_id": uid }, { "_id": 0, "room_id": 1 }))
+        if not user_rooms:
+            await websocket.close(code=1008)
+            return
+
+        rids = [ObjectId(u['room_id']) for u in user_rooms]
     except bson.errors.InvalidId:
         await websocket.close(code=1008, reason='invalid id')
         return
 
-    is_allowed = await manager.connect(websocket, user_id, room_id)
-    if not is_allowed:
-        return
+    for rid in rids:
+        is_allowed = await manager.connect(websocket, user_id, str(rid))
+        if not is_allowed:
+            return
 
     try:
         while True:
-            text = await websocket.receive_text()
+            data = await websocket.receive_json()
+            room_id = data.get('room_id')
 
-            if not is_user_in_room(user_id, room_id):
+            if not has_user_joined_the_room(user_id, room_id):
                 await websocket.send_json({"type": "error", "error": "user_not_in_room"})
                 continue
 
             # Get the last-seq and update it
             room = rooms_collection.find_one_and_update(
-                { "_id": rid },
+                { "_id": ObjectId(room_id) },
                 { "$inc": { "last_seq": 1 } },
                 return_document=ReturnDocument.AFTER
             )
@@ -660,7 +680,7 @@ async def websocket(
                 "room_id": rid,
                 "sender_id": uid,
                 "seq": seq,
-                "body": text,
+                "body": data['body'],
                 "created_at": now,
                 "edited_at": None,
                 "deleted": False,
@@ -669,7 +689,7 @@ async def websocket(
 
             # Payload sended to all connections
             sender = users_collection.find_one(
-                {"_id": uid}, {"username": 1, "display_name": 1}
+                { "_id": uid }, { "username": 1, "display_name": 1 }
             )
 
             payload = {
@@ -677,7 +697,7 @@ async def websocket(
                 "id": str(result.inserted_id),
                 "room_id": room_id,
                 "seq": seq,
-                "body": text,
+                "body": data['body'],
                 "created_at": now.isoformat(),
                 "edited_at": None,
                 "deleted": False,
@@ -692,5 +712,7 @@ async def websocket(
 
     except WebSocketDisconnect:
         pass
+    except bson.errors.InvalidId:
+        pass
     finally:
-        await manager.disconnect(websocket, room_id)
+        await manager.disconnect(websocket, None)
