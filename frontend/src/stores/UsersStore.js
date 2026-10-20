@@ -34,7 +34,6 @@ export const useUsersStore = defineStore('usersStore', () => {
         try {
             const response = await api.get(`/users/${user_id}/display_name`)
             const data = response.data
-            console.log(data);
 
             return data
         } catch (exc) {

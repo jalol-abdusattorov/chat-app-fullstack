@@ -1,3 +1,4 @@
+import re
 from typing import Annotated
 import bson
 from bson import ObjectId
@@ -315,12 +316,8 @@ def get_room_details(
 @router.post("/join/room/{room_id}")
 def join_room(
     room_id: str,
-    user_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    user_id: str = Depends(get_current_user_id)
 ):
-    check_owner(request, user_id)
-
     try:
         rid = ObjectId(room_id)
         uid = ObjectId(user_id)
@@ -341,7 +338,139 @@ def join_room(
 
     result = add_person_to_room(uid, rid, role='member')
 
-    return {'member-id': str(result.inserted_id), 'state': 'success'}
+    return {'member-id': str(result.inserted_id), 'ok': True}
+
+
+# AUTHORIZED
+@router.get("/search/rooms")
+def search_rooms(
+    search: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    try:
+        uid = ObjectId(user_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
+
+    clean_search = re.escape(search.strip())
+
+    rooms_cursor = rooms_collection.find({
+        "$or": [
+            { "name": clean_search },
+            { "name": { "$regex": clean_search, "$options": "i" } }
+        ]
+    })
+    
+    rooms = {}
+    for room in rooms_cursor:
+        rooms[room["_id"]] = room
+
+    if not rooms:
+        return {"rooms": [], "ok": True}
+
+    room_ids = list(rooms.keys())
+
+    memberships = {
+        m["room_id"]: m 
+        for m in room_members_collection.find({
+            "user_id": uid,
+            "room_id": { "$in": room_ids }
+        }, { "_id": 0, "room_id": 1, "last_read_seq": 1 })
+    }
+
+    pipeline_rooms = list(rooms_collection.aggregate([
+        {
+            "$match": {
+                "_id": { "$in": room_ids }
+            }
+        },
+        {
+            "$project": { "type": 1, "name": 1, "last_seq": 1 }
+        },
+        {
+            "$lookup": {
+                "from": messages_collection.name,
+                "let": { "rid": "$_id" },
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    { "$eq": [ "$room_id", "$$rid" ] },
+                                    { "$eq": [ "$deleted", False ] },
+                                ]
+                            }
+                        }
+                    },
+                    { "$sort": { "seq": -1 } },
+                    { "$limit": 1 },
+                    { "$project": { "_id": 0, "body": 1, "created_at": 1, "sender_id": 1 } },
+                ],
+                "as": "last_message",
+            }
+        },
+    ]))
+
+    for room in pipeline_rooms:
+        rooms[room["_id"]].update(room)
+
+    private_ids = [rid for rid, r in rooms.items() if r.get("type") == "private"]
+    other_user_of = {}
+    if private_ids:
+        for m in room_members_collection.find(
+            { "room_id": { "$in": private_ids }, "user_id": { "$ne": uid } },
+            { "_id": 0, "room_id": 1, "user_id": 1 },
+        ):
+            other_user_of[m["room_id"]] = m["user_id"]
+
+    needed_user_ids = set(other_user_of.values())
+    for r in rooms.values():
+        lm = r.get("last_message")
+        if lm:
+            needed_user_ids.add(lm[0]["sender_id"])
+
+    names = {}
+    if needed_user_ids:
+        names = {
+            u["_id"]: u["display_name"]
+            for u in users_collection.find(
+                { "_id": { "$in": list(needed_user_ids) } },
+                { "display_name": 1 },
+            )
+        }
+
+    result = []
+    for room_id, room in rooms.items():
+        if room.get("type") == "private":
+            name = names.get(other_user_of.get(room_id))
+        else:
+            name = room.get("name")
+
+        last_message = None
+        if room.get("last_message"):
+            lm = room["last_message"][0]
+            lm["display_name"] = "you" if lm["sender_id"] == uid else names.get(lm["sender_id"])
+            lm["sender_id"] = str(lm["sender_id"])
+            last_message = lm
+
+        membership = memberships.get(room_id)
+        if membership:
+            unread_count = room.get("last_seq", 0) - membership.get("last_read_seq", 0)
+            is_member = True
+        else:
+            unread_count = 0
+            is_member = False
+
+        result.append({
+            "room_id": str(room_id),
+            "type": room.get("type"),
+            "name": name,
+            "last_message": last_message,
+            "unread_count": unread_count,
+            "is_member": is_member,
+        })
+
+    return {"rooms": result, "ok": True}
 
 
 # AUTHORIZED AND OWNER CHECK
@@ -456,55 +585,6 @@ def remove_people(
     res = remove_people_from_room(candidate_uids, room, rid)
     return res
 
-    # try:
-    #     room_id = ObjectId(room_id)
-    #     user_id = ObjectId(user_id)
-
-    #     room = privates_collection.find_one({ "_id": room_id })
-    #     if room:
-    #         raise HTTPException(status_code=403, detail="Cannot remove people from private chat")
-
-    #     room = groups_collection.find_one({ "_id": room_id })
-    #     if not room:
-    #         raise HTTPException(status_code=403, detail="room not found")
-
-    #     room_members = [room_member for room_member in room['members']]
-    #     if room.get('owner') != user_id:
-    #         raise HTTPException(status_code=403, detail="Permission denied, not the owner of group")
-
-    #     user = users_collection.find_one({ "_id": user_id })
-    #     if not user:
-    #         raise HTTPException(status_code=403, detail=f"Remover not found '{user}")
-    #     if user_id not in room_members:
-    #         raise HTTPException(status_code=403, detail="User hasn't joined the room")
-
-    #     removed_user_ids = []
-    #     removed_count = 0
-    #     for i in users.users:
-    #         i = ObjectId(i)
-    #         adding_user = users_collection.find_one({ "_id": i })
-    #         if not adding_user:
-    #             raise HTTPException(status_code=404, detail=f"User not found '{str(i)}")
-
-    #         if i not in room_members:
-    #             raise HTTPException(status_code=403, detail=f"User not in room '{str(i)}'")
-
-    #         if i == room['owner']:
-    #             raise HTTPException(status_code=403, detail="Cannot remove owner")
-
-    #         groups_collection.update_one({ "_id": room_id }, { "$pull": { "members": i } })
-    #         users_collection.update_one({ "_id": i }, { "$pull": { "joined_rooms": room_id } })
-    #         removed_user_ids.append(str(i))
-    #         removed_count += 1
-
-    #     return {
-    #         'removed_count': removed_count,
-    #         'removed_users': removed_user_ids
-    #     }
-
-    # except bson.errors.InvalidId:
-    #     raise invalid_id_exception
-
 
 # AUTHORIZED
 @router.get("/room/{room_id}/members")
@@ -536,17 +616,15 @@ def get_room_members(
 @router.get("/room/{room_id}/online-members")
 def get_onine_people(
     room_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    current_user_id: str = Depends(get_current_user_id)
 ):
+    if not has_user_joined_the_room(current_user_id, room_id):
+        raise HTTPException(status_code=403, detail="User hasn't joined the room")
+
     try:
         room_id = ObjectId(room_id)
     except bson.errors.InvalidId:
         raise invalid_id_exception
-
-    room = rooms_collection.find_one({ "_id": room_id })
-    if not room:
-        raise HTTPException(status_code=404, detail="Room not found")
 
     active_users = get_online_users(room_id)
 
@@ -557,13 +635,12 @@ class RoomConnectionManager:
     def __init__(self):      # { room_id: { WebSocket: user_id, ... } }
         self.active_connections: dict[str, dict[WebSocket, str]] = {}
 
-    async def connect(self, websocket: WebSocket, user_id: str, room_id: str):
-        has_user_joined = self.is_user_a_member(user_id, room_id)
-        if not has_user_joined:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="User hasn't joined the room")
-            return False
+    async def connect(self, websocket: WebSocket, user_id: str, room_id: str, is_subscribing: bool | None = None):
+        if not is_subscribing:
+            has_user_joined = self.is_user_a_member(user_id, room_id)
+            if not has_user_joined:
+                return False
 
-        await websocket.accept()
         if room_id not in self.active_connections:
             self.active_connections[room_id] = { websocket: user_id }
         else:
@@ -584,6 +661,9 @@ class RoomConnectionManager:
 
         for connection in dead_cons:
             await self.disconnect(connection, room_id)
+
+    async def subscribe(self, websocket: WebSocket, user_id: str, room_id: str):
+        return await self.connect(websocket, user_id, room_id, True)
 
     async def disconnect(self, websocket: WebSocket, room_id: str | None = None):
         if not room_id:
@@ -639,80 +719,99 @@ async def websocket(
     try:
         uid = ObjectId(user_id)
         user_rooms = list(room_members_collection.find({ "user_id": uid }, { "_id": 0, "room_id": 1 }))
-        if not user_rooms:
-            await websocket.close(code=1008)
-            return
+        rids = []
 
-        rids = [ObjectId(u['room_id']) for u in user_rooms]
+        if user_rooms:
+            rids = [ObjectId(u['room_id']) for u in user_rooms]
     except bson.errors.InvalidId:
         await websocket.close(code=1008, reason='invalid id')
         return
 
-    for rid in rids:
+    for rid in set(rids):
         is_allowed = await manager.connect(websocket, user_id, str(rid))
         if not is_allowed:
+            await websocket.close(code=1008)
             return
+
+    await websocket.accept()
 
     try:
         while True:
             data = await websocket.receive_json()
+            event_type = data.get('type', '')
             room_id = data.get('room_id')
+            rid = ObjectId(room_id)
 
-            if not has_user_joined_the_room(user_id, room_id):
-                await websocket.send_json({"type": "error", "error": "user_not_in_room"})
-                continue
+            if event_type == 'subscribe':
+                is_allowed = await manager.subscribe(websocket, user_id, room_id)
+                if not is_allowed:
+                    await websocket.send_json({
+                        "type": "error",
+                        "error": "user_not_in_room"
+                    })
+                    continue
 
-            # Get the last-seq and update it
-            room = rooms_collection.find_one_and_update(
-                { "_id": ObjectId(room_id) },
-                { "$inc": { "last_seq": 1 } },
-                return_document=ReturnDocument.AFTER
-            )
+                await websocket.send_json({
+                    'type': 'subscribed',
+                    'room_id': room_id
+                })
 
-            if room is None:
-                await websocket.send_json({"type": "error", "error": "room_not_found"})
-                continue
-        
-            # Save it do the database
-            now = dt.now(timezone.utc)
-            seq = room['last_seq']
-            doc = {
-                "room_id": rid,
-                "sender_id": uid,
-                "seq": seq,
-                "body": data['body'],
-                "created_at": now,
-                "edited_at": None,
-                "deleted": False,
-            }
-            result = messages_collection.insert_one(doc)
+            else:
+                if not has_user_joined_the_room(user_id, room_id):
+                    await websocket.send_json({"type": "error", "error": "user_not_in_room"})
+                    continue
 
-            # Payload sended to all connections
-            sender = users_collection.find_one(
-                { "_id": uid }, { "username": 1, "display_name": 1 }
-            )
+                # Get the last-seq and update it
+                room = rooms_collection.find_one_and_update(
+                    { "_id": ObjectId(room_id) },
+                    { "$inc": { "last_seq": 1 } },
+                    return_document=ReturnDocument.AFTER
+                )
 
-            payload = {
-                "type": "new_message",
-                "id": str(result.inserted_id),
-                "room_id": room_id,
-                "seq": seq,
-                "body": data['body'],
-                "created_at": now.isoformat(),
-                "edited_at": None,
-                "deleted": False,
-                "sender": {
-                    "id": str(uid),
-                    "username": sender.get("username") if sender else None,
-                    "display_name": sender.get("display_name") if sender else "Deleted user",
-                },
-            }
+                if room is None:
+                    await websocket.send_json({"type": "error", "error": "room_not_found"})
+                    continue
+            
+                # Save it do the database
+                now = dt.now(timezone.utc)
+                seq = room['last_seq']
+                doc = {
+                    "room_id": rid,
+                    "sender_id": uid,
+                    "seq": seq,
+                    "body": data['body'],
+                    "created_at": now,
+                    "edited_at": None,
+                    "deleted": False,
+                }
+                result = messages_collection.insert_one(doc)
 
-            await manager.broadcast_to_room(room_id, payload)
+                # Payload sended to all connections
+                sender = users_collection.find_one(
+                    { "_id": uid }, { "username": 1, "display_name": 1 }
+                )
+
+                payload = {
+                    "type": "new_message",
+                    "id": str(result.inserted_id),
+                    "room_id": room_id,
+                    "seq": seq,
+                    "body": data['body'],
+                    "created_at": now.isoformat(),
+                    "edited_at": None,
+                    "deleted": False,
+                    "sender": {
+                        "id": str(uid),
+                        "username": sender.get("username") if sender else None,
+                        "display_name": sender.get("display_name") if sender else "Deleted user",
+                    },
+                }
+
+                await manager.broadcast_to_room(room_id, payload)
 
     except WebSocketDisconnect:
         pass
     except bson.errors.InvalidId:
         pass
     finally:
-        await manager.disconnect(websocket, None)
+        await manager.disconnect(websocket)

@@ -2,10 +2,14 @@
     <div class="main-chat-layout">
         <ChatSideBar />
 
-		<router-view :key="$route.params.room_id" />
+        <div class="room-view-container">
+            <router-view :key="$route.params.room_id" />
 
-		<div class="chat-main-content" v-if="!inRoom">
-            <p style="margin: auto; color: #94a3b8;">Select a conversation to start chatting</p>
+            <div class="chat-main-content" v-if="!inRoom">
+                <p style="margin: auto; color: #94a3b8;">
+                    Select a chat to start messaging
+                </p>
+            </div>
         </div>
     </div>
 </template>
@@ -126,8 +130,20 @@ export default {
     height: 100vh;
     height: 100dvh;
     min-width: 0;
+    min-height: 0;
     overflow: hidden;
     background: var(--app-bg);
+}
+
+.room-view-container {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    width: 0;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .chat-main-content {

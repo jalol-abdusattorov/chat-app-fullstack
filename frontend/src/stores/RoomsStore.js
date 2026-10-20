@@ -7,7 +7,9 @@ export const useRoomsStore = defineStore('roomsStore', () => {
     const loading = ref(false)
     const error = ref(null)
     const rooms = ref([])
+    const userRooms = ref([])
     const socket = ref(null)
+    const subscribedRooms = ref(new Set())
 
     async function getUserRooms() {
         loading.value = true
@@ -18,6 +20,11 @@ export const useRoomsStore = defineStore('roomsStore', () => {
             const data = response.data
 
             rooms.value = data.rooms
+            for (const i of data.rooms){
+                userRooms.value.push(i.room_id)
+            }
+            userRooms.value = [...new Set(userRooms.value)]
+
             return data
         } catch (exc) {
             error.value = 
@@ -70,6 +77,88 @@ export const useRoomsStore = defineStore('roomsStore', () => {
         }
     }
 
+    async function leavePrivateChat(roomId) {
+        loading.value = true
+        error.value = null
+
+        try {
+            const response = await api.delete(`/users/leave-private/${roomId}`)
+            const data = response.data
+
+            return data
+        } catch (exc) {
+            error.value = 
+                exc.response?.data?.detail ||
+                exc.response?.data?.message ||
+                "Failed"
+            throw exc
+        } finally {
+            loading.value = false
+        }
+    }
+    async function leaveGroupChat(roomId) {
+        loading.value = true
+        error.value = null
+
+        try {
+            const response = await api.delete(`/users/leave-group/${roomId}`)
+            const data = response.data
+
+            return data
+        } catch (exc) {
+            error.value = 
+                exc.response?.data?.detail ||
+                exc.response?.data?.message ||
+                "Failed"
+            throw exc
+        } finally {
+            loading.value = false
+        }
+    }
+
+    async function searchRooms(search) {
+        loading.value = true
+        error.value = null
+
+        try {
+            const response = await api.get(`/search/rooms`, { params: { search: search } })
+            const data = response.data
+            if (data?.ok) {
+                rooms.value = data.rooms
+            }
+
+            return data
+        } catch (exc) {
+            error.value = 
+                exc.response?.data?.detail ||
+                exc.response?.data?.message ||
+                "Failed"
+            throw exc
+        } finally {
+            loading.value = false
+        }
+    }
+
+    async function joinRoom(roomId) {
+        loading.value = true
+        error.value = null
+
+        try {
+            const response = await api.post(`/join/room/${roomId}`)
+            const data = response.data
+
+            return data
+        } catch (exc) {
+            error.value = 
+                exc.response?.data?.detail ||
+                exc.response?.data?.message ||
+                "Failed"
+            throw exc
+        } finally {
+            loading.value = false
+        }
+    }
+
     function connectSocket() {
         const authStore = useAuthStore()
         if (
@@ -88,11 +177,36 @@ export const useRoomsStore = defineStore('roomsStore', () => {
             `${base}/ws?token=${encodeURIComponent(authStore.token)}`
         )
 
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data)
+            if (data.type == 'subscribed') subscribedRooms.value.add(data.room_id)
+        }
+
+        ws.onopen = () => console.log("WebSocket opened")
         ws.onerror = (e) => console.error('WebSocket error', e)
-        ws.onclose = (e) => console.log('WebSocket closed', e.code, e.reason)
+        ws.onclose = (e) => {
+            subscribedRooms.value.clear()
+            console.log('WebSocket closed', e.code, e.reason)
+        }
 
         socket.value = ws
         return ws
+    }
+    function subscribeToRoom(roomId) {
+        if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
+            console.warn("Socket not open")
+            return false
+        }
+        if (subscribedRooms.value.has(roomId)) { 
+            console.log("Already subscribed")
+            return true
+        }
+
+        socket.value.send(JSON.stringify({
+            type: 'subscribe',
+            room_id: roomId
+        }))
+        return true
     }
 
     return {
@@ -101,8 +215,15 @@ export const useRoomsStore = defineStore('roomsStore', () => {
         rooms,
         getUserRooms,
         getRoomDetails,
+        searchRooms,
+        userRooms,
         socket,
         createRoom,
+        leavePrivateChat,
+        leaveGroupChat,
+        joinRoom,
         connectSocket,
+        subscribeToRoom,
+        subscribedRooms,
     }
 })

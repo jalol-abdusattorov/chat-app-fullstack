@@ -320,7 +320,14 @@
     --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
     --font-body: 'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
+    box-sizing: border-box;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: scroll;
+    overflow-x: hidden;
     padding: 32px 16px;
+
     color: var(--ink);
     font-family: var(--font-body);
     font-optical-sizing: auto;

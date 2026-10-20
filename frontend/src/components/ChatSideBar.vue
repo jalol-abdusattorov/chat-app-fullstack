@@ -1,5 +1,47 @@
 <template>
     <aside class="sidebar-wrapper" :style="{ width: sidebarWidth + 'px' }">
+        <div v-if="username" class="user-profile-card">
+            <div class="profile-main">
+                <div class="avatar-container">
+                    <div class="user-avatar">
+                        {{ username.charAt(0).toUpperCase() }}
+                    </div>
+                    <span class="online-status"></span>
+                </div>
+
+                <div class="user-details">
+                    <span class="user-status-label">Logged in as</span>
+                    <span class="username-display" :title="username">
+                        {{ username }}
+                    </span>
+                </div>
+            </div>
+
+            <button
+                type="button"
+                class="logout-btn"
+                @click="handleLoggingOut"
+                title="Log out"
+                aria-label="Log out"
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+            </button>
+        </div>
+
         <div class="sidebar-header">
             <h1 class="rooms-title">Rooms</h1>
             <span class="chat-count-badge">
@@ -7,20 +49,93 @@
             </span>
         </div>
 
+        <!-- Search rooms bar -->
+        <div class="rooms-search-wrapper">
+            <div class="rooms-search-bar">
+                <svg
+                    class="rooms-search-icon"
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="19"
+                    height="19"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.35-4.35" />
+                </svg>
+
+                <input
+                    v-model="chatsSearchingValue"
+                    @input="onTypingChatsBar"
+                    type="text"
+                    class="rooms-search-input"
+                    placeholder="Search conversations..."
+                    aria-label="Search conversations"
+                />
+            </div>
+        </div>
+
         <!-- Scrollable rooms list -->
         <div class="rooms-container">
             <Rooms />
         </div>
 
-        <!-- Fixed bottom action -->
-        <div class="sidebar-footer">
-            <button class="create-room-btn" @click="openModal">
-                <span class="plus-icon-wrapper">+</span>
-                <div class="btn-text-container">
-                    <span class="btn-title">Create Room</span>
-                    <span class="btn-subtitle">Start a new conversation</span>
-                </div>
+        <!-- Sliding Create Room panel -->
+        <div
+            class="create-room-drawer"
+            :class="{ 'drawer-collapsed': !isCreateRoomExpanded }"
+        >
+            <!-- Arrow toggle -->
+            <button
+                type="button"
+                class="drawer-arrow-toggle"
+                @click="toggleCreateRoom"
+                :aria-expanded="isCreateRoomExpanded"
+                :aria-label="isCreateRoomExpanded ? 'Collapse create room panel' : 'Expand create room panel'"
+                :title="isCreateRoomExpanded ? 'Collapse panel' : 'Expand panel'"
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <!-- Down when open, up when closed -->
+                    <polyline
+                        v-if="isCreateRoomExpanded"
+                        points="6 9 12 15 18 9"
+                    />
+                    <polyline
+                        v-else
+                        points="6 15 12 9 18 15"
+                    />
+                </svg>
             </button>
+
+            <!-- This section slides away -->
+            <div class="drawer-content">
+                <button
+                    type="button"
+                    class="create-room-btn"
+                    @click="openModal"
+                >
+                    <span class="plus-icon-wrapper">+</span>
+
+                    <span class="btn-text-container">
+                        <span class="btn-title">Create Room</span>
+                        <span class="btn-subtitle">Start a new conversation</span>
+                    </span>
+                </button>
+            </div>
         </div>
 
         <!-- Create room modal -->
@@ -40,7 +155,8 @@
                     id="room-name"
                     v-model="roomName"
                     type="text"
-                    placeholder="e.g. Project Team"
+                    :disabled="roomType == 'private'"
+                    :placeholder="roomType == 'private' ? 'You cant enter a name to private chat' : 'e.g. Project Team'"
                     maxlength="80"
                     required
                 />
@@ -122,7 +238,7 @@
                     <button
                         type="submit"
                         class="submit-btn"
-                        :disabled="!roomName.trim()"
+                        :disabled="roomType == 'private' && roomMembers.length != 2 || roomType == 'group' && !roomName.trim()"
                     >
                         Create Room
                     </button>
@@ -136,12 +252,13 @@
 </template>
 
 <script>
-import { ref, onBeforeUnmount } from 'vue';
+import { ref, onBeforeUnmount, onMounted } from 'vue';
 import { useRoomsStore } from '../stores/RoomsStore.js';
 import Rooms from './Rooms.vue';
 import Modal from './Modal.vue';
 import { useAuthStore } from '../stores/auth.js';
 import { useUsersStore } from '../stores/UsersStore.js';
+import { useRouter } from 'vue-router';
 
 export default {
     name: 'ChatSideBar',
@@ -162,7 +279,23 @@ export default {
         const formError = ref('');
         const error = ref(null);
         const searchingValue = ref('');
+        const username = ref(null)
         let debounceTimer = null;
+
+        let debounceTimer2 = null
+        const chatsSearchingValue = ref('')
+        const onTypingChatsBar = () => {
+            clearTimeout(debounceTimer2)
+            debounceTimer2 = setTimeout(async () => {
+                const search = chatsSearchingValue.value.trim()
+                if (search) {
+                    await roomsStore.searchRooms(search)
+                } else {
+                    await roomsStore.getUserRooms()
+                }
+            }, 200  )
+        }
+
 
         const onTyping = () => {
             clearTimeout(debounceTimer);
@@ -184,7 +317,6 @@ export default {
             document.addEventListener('mouseup', stopResize);
             document.body.style.userSelect = 'none';
         };
-
         const resize = (e) => {
             if (!isResizing) return;
             let newWidth = e.clientX;
@@ -192,7 +324,6 @@ export default {
             if (newWidth > 550) newWidth = 550;
             sidebarWidth.value = newWidth;
         };
-
         const stopResize = () => {
             isResizing = false;
             document.removeEventListener('mousemove', resize);
@@ -204,7 +335,6 @@ export default {
             formError.value = '';
             isModalActive.value = true;
         };
-
         const closeModal = () => {
             isModalActive.value = false;
             formError.value = '';
@@ -218,7 +348,6 @@ export default {
             searchingValue.value = '';
             usersStore.searchResults = [];
         };
-
         const removeMember = (userId) => {
             roomMembers.value = roomMembers.value.filter(id => id !== userId);
             selectedUsersObjects.value = selectedUsersObjects.value.filter(u => u._id !== userId);
@@ -234,11 +363,10 @@ export default {
             formError.value = '';
             if (usersStore.searchResults) usersStore.searchResults = [];
         };
-
         const createRoom = async () => {
             const name = roomName.value.trim();
 
-            if (!name) {
+            if (!name && roomType.value == 'group') {
                 formError.value = 'Please enter a room name.';
                 return;
             }
@@ -261,16 +389,42 @@ export default {
                     formError.value = data.message || 'Something went wrong, please try again.';
                     return;
                 }
+                roomsStore.subscribeToRoom(data.room_id)
                 resetForm();
                 closeModal();
             } catch (err) {
                 formError.value = err.response?.data?.detail || 'Failed to create room. Please try again.';
+                console.error(err)
+            } finally {
+                await roomsStore.getUserRooms()
             }
         };
+
+        const getUsername = async () => {
+            const data = await usersStore.getUserUsername(authStore.user.id)
+            if (!data || !data?.display_name) username.value = null
+            username.value = data.display_name
+        }
+
+        const router = useRouter()
+        const handleLoggingOut = () => {
+            router.push({ name: "Logout" })
+        }
+
+
+        onMounted(async () => {
+            await getUsername()
+        })
 
         onBeforeUnmount(() => {
             stopResize();
         });
+
+        const isCreateRoomExpanded = ref(true);
+
+        const toggleCreateRoom = () => {
+            isCreateRoomExpanded.value = !isCreateRoomExpanded.value;
+        };
 
         return {
             roomsStore,
@@ -291,8 +445,14 @@ export default {
             createRoom,
             onTyping,
             addMember,
+            username,
             removeMember,
+            handleLoggingOut,
+            chatsSearchingValue,
+            onTypingChatsBar,
             error,
+            isCreateRoomExpanded,
+            toggleCreateRoom,
         };
     }
 };
@@ -300,16 +460,144 @@ export default {
 
 <style scoped>
 .sidebar-wrapper {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        Helvetica, Arial, sans-serif;
-    height: 100vh;
-    background-color: #ffffff;
-    border-right: 1px solid #e5e7eb;
     display: flex;
     flex-direction: column;
+    height: 100%;
+    max-height: 100vh;
+    max-height: 100dvh;
+    background: #ffffff;
+    border-right: 1px solid #eaeaea;
+    position: relative;
+    overflow: hidden; /* Locks outer sidebar scroll */
+    flex-shrink: 0;
+}
+
+/* Make sure the rooms container component fills the remaining space and scrolls */
+.rooms-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0; /* Crucial for flex child scrolling */
+}
+
+/* Prevent headers and buttons from breaking layout */
+.user-profile-card,
+.sidebar-header,
+.rooms-search-wrapper,
+.create-room-drawer {
+    flex-shrink: 0;
+}
+
+.user-profile-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 12px 12px 16px;
+    margin: 12px 16px 0;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
     box-sizing: border-box;
+}
+
+.user-profile-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.profile-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    flex: 1;
+}
+
+.username-display {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+}
+
+.logout-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    transition:
+        background-color 0.2s ease,
+        color 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.logout-btn:hover {
+    background-color: #fef2f2;
+    color: #dc2626;
+    border-color: #fecaca;
+}
+
+.logout-btn:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.avatar-container {
     position: relative;
     flex-shrink: 0;
+}
+
+.user-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.15);
+}
+
+.user-status-label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    margin-bottom: 3px;
+}
+
+.username-display {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #111827;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .sidebar-header {
@@ -476,6 +764,77 @@ export default {
     margin-top: 4px;
 }
 
+/* Search bar spacing */
+.rooms-search-wrapper {
+    padding: 14px 16px 10px;
+    flex-shrink: 0;
+    background-color: #ffffff;
+    box-sizing: border-box;
+}
+
+.rooms-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    height: 42px;
+    padding: 0 12px;
+    box-sizing: border-box;
+
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 11px;
+
+    color: #94a3b8;
+    transition:
+        border-color 0.2s ease,
+        background-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.rooms-search-bar:hover {
+    border-color: #cbd5e1;
+    background-color: #ffffff;
+}
+
+.rooms-search-bar:focus-within {
+    background-color: #ffffff;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+    color: #2563eb;
+}
+
+.rooms-search-icon {
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+.rooms-search-input {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+
+    color: #111827;
+    font-family: inherit;
+    font-size: 0.88rem;
+    font-weight: 400;
+}
+
+.rooms-search-input::placeholder {
+    color: #94a3b8;
+    opacity: 1;
+}
+
+.rooms-search-input:focus {
+    outline: none;
+}
+
 .search-result-item {
     display: flex;
     justify-content: space-between;
@@ -591,6 +950,8 @@ export default {
     color: #dc2626;
 }
 
+
+
 .form-error {
     margin: 8px 0;
     padding: 8px 12px;
@@ -655,5 +1016,102 @@ export default {
 
 .resize-handle:hover {
     background-color: rgba(59, 130, 246, 0.2);
+}
+/* Sliding Create Room panel */
+.create-room-drawer {
+    position: relative;
+    z-index: 5;
+    flex-shrink: 0;
+    padding: 4px 12px 4px;
+    background: #ffffff;
+    border-top: 1px solid #e5e7eb;
+    box-sizing: border-box;
+    transition: padding 0.3s ease;
+}
+
+/* Minimal arrow button */
+.drawer-arrow-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 26px;
+    margin: 0 auto;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    transition:
+        background-color 0.2s ease,
+        color 0.2s ease;
+}
+
+.drawer-arrow-toggle:hover {
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.drawer-arrow-toggle:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* Animate the Create Room button */
+.drawer-content {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    margin-top: 6px;
+    overflow: hidden;
+    transition:
+        grid-template-rows 0.35s ease,
+        opacity 0.25s ease,
+        margin-top 0.35s ease;
+}
+
+.drawer-content > .create-room-btn {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.create-room-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-width: 0;
+    padding: 12px;
+    border: 1px dashed #93c5fd;
+    border-radius: 12px;
+    background: #f8fbff;
+    color: #111827;
+    cursor: pointer;
+    text-align: left;
+    box-sizing: border-box;
+    transition:
+        background-color 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.create-room-btn:hover {
+    background: #eff6ff;
+    border-color: #3b82f6;
+}
+
+.create-room-btn .btn-text-container {
+    min-width: 0;
+}
+
+/* Collapsed: the button slides away and frees sidebar space */
+.create-room-drawer.drawer-collapsed .drawer-content {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-top: 0;
+}
+
+.create-room-drawer.drawer-collapsed {
+    padding-bottom: 0px;
 }
 </style>

@@ -128,8 +128,8 @@ def get_user_rooms(
         names = {
             u["_id"]: u["display_name"]
             for u in users_collection.find(
-                {"_id": {"$in": list(needed_user_ids)}},
-                {"display_name": 1},
+                { "_id": { "$in": list(needed_user_ids) } },
+                { "display_name": 1 },
             )
         }
 
@@ -153,6 +153,7 @@ def get_user_rooms(
 
         result.append({
             "room_id": str(m["room_id"]),
+            "type": room['type'],
             "name": name,
             "last_message": last_message,
             "unread_count": room["last_seq"] - m["last_read_seq"],
@@ -292,15 +293,10 @@ def is_user_online(
 @router.delete('/users/leave-private/{room_id}')
 def leave_private_chat(
     room_id: str,
-    user_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    user_id: str = Depends(get_current_user_id),
 ):
-    check_owner(request, user_id)
-
     try:
         rid = ObjectId(room_id)
-        uid = ObjectId(user_id)
     except bson.errors.InvalidId:
         raise invalid_id_exception
 
@@ -322,12 +318,8 @@ def leave_private_chat(
 @router.delete('/users/leave-group/{room_id}')
 def leave_group_chat(
     room_id: str,
-    user_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    user_id: str = Depends(get_current_user_id),
 ):
-    check_owner(request, user_id)
-
     try:
         rid = ObjectId(room_id)
         uid = ObjectId(user_id)

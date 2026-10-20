@@ -122,6 +122,7 @@ async def edit_message(
     )
     return {'ok': True}
 
+
 # AUTHORIZED AND IN ROOM CHECK
 @router.delete("/messages/delete-message/{message_id}")
 async def delete_message(

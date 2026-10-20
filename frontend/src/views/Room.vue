@@ -89,7 +89,7 @@
                     top: `${contextMenu.y}px`
                 }"
                 @contextmenu.prevent
-                >
+            >
                 <button
                     class="context-menu-item delete-item"
                     @click.stop="handleDeleteMessage"
@@ -122,358 +122,357 @@ import { useMessagesStore } from '../stores/MessagesStore';
 import { useUsersStore } from '../stores/UsersStore';
 import { useRouter } from 'vue-router';
 
-    export default {
-        props: ['room_id', 'socket'],
-        setup(props) {
-            const authStore = useAuthStore()
-            const roomsStore = useRoomsStore()
-            const messagesStore = useMessagesStore()
-            const usersStore = useUsersStore()
-            const router = useRouter()
+export default {
+    props: ['room_id', 'socket'],
+    setup(props) {
+        const authStore = useAuthStore()
+        const roomsStore = useRoomsStore()
+        const messagesStore = useMessagesStore()
+        const usersStore = useUsersStore()
+        const router = useRouter()
 
-            const draft = ref('')
-            const room = ref(null)
-            const messages = ref(null)
-            const nextBeforeSeq = ref(null)
-            const lastSeq = ref(0)
-            const messageLogRef = ref(null)
-            const isLeaving = ref(false)
-            let leaveTimer = null
-            let readTimer = null
-            let lastSentRead = 0
-            let loadingOlder = false
+        const draft = ref('')
+        const room = ref(null)
+        const messages = ref(null)
+        const nextBeforeSeq = ref(null)
+        const lastSeq = ref(0)
+        const messageLogRef = ref(null)
+        const isLeaving = ref(false)
+        const activeUsers = ref(null)
+        let leaveTimer = null
+        let readTimer = null
+        let lastSentRead = 0
+        let loadingOlder = false
 
-            const contextMenu = ref({
-                visible: false,
-                x: 0,
-                y: 0,
-                message: null
-            })
-            const editingMessageId = ref(null)
-            const editDraft = ref('')
+        const contextMenu = ref({
+            visible: false,
+            x: 0,
+            y: 0,
+            message: null
+        })
+        const editingMessageId = ref(null)
+        const editDraft = ref('')
 
-            function startEditMessage() {
-                const message = contextMenu.value.message
+        function startEditMessage() {
+            const message = contextMenu.value.message
 
-                closeMessageMenu()
+            closeMessageMenu()
 
-                if (!message || !message.body) return
+            if (!message || !message.body) return
 
-                if (!isMyMessage(message)) return
+            if (!isMyMessage(message)) return
 
-                editingMessageId.value = message._id ?? message.id
-                editDraft.value = message.body
+            editingMessageId.value = message._id ?? message.id
+            editDraft.value = message.body
+        }
+
+        function cancelEditMessage() {
+            editingMessageId.value = null
+            editDraft.value = ''
+        }
+
+        async function saveEditedMessage() {
+            const messageId = editingMessageId.value
+            const newMessage = editDraft.value.trim()
+
+            if (!messageId || !newMessage) return
+
+            const message = messages.value?.find(
+                m => (m._id ?? m.id) === messageId
+            )
+
+            if (!message) {
+                cancelEditMessage()
+                return
             }
 
-            function cancelEditMessage() {
-                editingMessageId.value = null
-                editDraft.value = ''
+            if (newMessage === message.body) {
+                cancelEditMessage()
+                return
             }
 
-            async function saveEditedMessage() {
-                const messageId = editingMessageId.value
-                const newMessage = editDraft.value.trim()
+            try {
+                const success = await editMessage(messageId, newMessage)
 
-                if (!messageId || !newMessage) return
+                if (!success) return
 
-                const message = messages.value?.find(
-                    m => (m._id ?? m.id) === messageId
-                )
-
-                if (!message) {
-                    cancelEditMessage()
-                    return
-                }
-
-                if (newMessage === message.body) {
-                    cancelEditMessage()
-                    return
-                }
-
-                try {
-                    const success = await editMessage(messageId, newMessage)
-
-                    if (!success) return
-
-                    cancelEditMessage()
-                } catch (error) {
-                    console.error('Failed to edit message:', error)
-                }
-            }
-
-            function openMessageMenu(event, message) {
-                const menuWidth = 170
-                const menuHeight = 55
-
-                contextMenu.value = {
-                    visible: true,
-                    x: Math.min(event.clientX, window.innerWidth - menuWidth - 8),
-                    y: Math.min(event.clientY, window.innerHeight - menuHeight - 8),
-                    message
-                }
-            }
-
-            function closeMessageMenu() {
-                contextMenu.value.visible = false
-            }
-
-            async function handleDeleteMessage() {
-                const message = contextMenu.value.message
-
-                closeMessageMenu()
-
-                if (!message) return
-                if (message.sender.id != authStore.user.id) return
-
-                await deleteMessage(message.id)
-            }
-
-            async function deleteMessage(messageId) {
-                await messagesStore.deleteMessage(props.room_id, messageId)
-            }
-            async function editMessage(messageId, newMessage) {
-                const res = await messagesStore.editMessage(messageId, props.room_id, newMessage)
-                if (!(res.status == 200)) {
-                    return false
-                }
-                return true
-            }
-
-            function isAtBottom(threshold = 80) {
-                const el = messageLogRef.value
-                if (!el) return false
-                return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
-            }
-
-            function onScroll() {
-                const el = messageLogRef.value
-                if (!el) return
-
-                if (el.scrollTop < 80) loadOlder()
-                markReadSoon()
-            }
-
-            function scrollToBottom() {
-                const el = messageLogRef.value
-                if (el) el.scrollTop = el.scrollHeight
-            }
-
-            async function sendRead(seq) {
-                if (seq <= lastSentRead) return
-                lastSentRead = seq
-
-                try {
-                    const response = await usersStore.readMessages(props.room_id, seq)
-                    if (!response.ok) {
-                        lastSentRead = 0
-                    }
-                } catch {
-                    lastSentRead = 0
-                }
-            }
-
-            function markReadSoon() {
-                if (document.visibilityState !== 'visible') return
-                if (!messages.value?.length || !isAtBottom()) return
-                clearTimeout(readTimer)
-                readTimer = setTimeout(() => sendRead(lastSeq.value), 500)
-            }
-
-            function sendMessage(text) {
-                if (!roomsStore.socket || roomsStore.socket.readyState !== WebSocket.OPEN) {
-                    console.warn('Socket not connected')
-                    return false
-                }
-
-                roomsStore.socket.send(JSON.stringify({
-                    room_id: props.room_id,
-                    body: text,
-                }))
-                return true
-            }
-            function submit() {
-                const text = draft.value.trim()
-                if (!text) return
-                if (sendMessage(text)) draft.value = ''
-            }
-
-            function findMessage(id) {
-                return messages.value.find(m => m.id === id)
-            }
-            function handleKeydown(event) {
-                if (event.key !== 'Escape') return
-
-                // If editing a message, cancel editing first.
-                if (editingMessageId.value !== null) {
-                    cancelEditMessage()
-                    return
-                }
-
-                // Prevent triggering the animation multiple times.
-                if (isLeaving.value) return
-
-                isLeaving.value = true
-
-                // Wait for the slide-out animation to finish.
-                leaveTimer = setTimeout(() => {
-                    router.push('/')
-                }, 250)
-            }
-            
-            // Helper to robustly check if the message belongs to the current user
-            function isMyMessage(m) {
-                if (!m) return false;
-                const senderId = m.sender?.id ?? m.sender_id ?? m.sender;
-                return senderId == authStore.user.id;
-            }
-
-            async function loadRoomDetails() {
-                const res = await roomsStore.getRoomDetails(props.room_id, authStore.user.id)
-                room.value = res?.status == 'success' ? res.room : res
-            }
-            async function loadInitial() {
-                const data = await messagesStore.getRoomMessages(props.room_id, authStore.user.id, null)
-                if (!data) {
-                    return
-                }
-                messages.value = data.messages.slice().reverse()
-                nextBeforeSeq.value = data.next_before_seq
-                lastSeq.value = messages.value.at(-1)?.seq ?? 0
-
-                await nextTick()
-            }
-
-            async function loadOlder() {
-                if (loadingOlder) return
-                if (nextBeforeSeq.value === null) return
-                const el = messageLogRef.value
-                if (!el) return
-
-                loadingOlder = true
-                const oldHeight = el.scrollHeight
-
-                try {
-                    const data = await messagesStore.getRoomMessages(
-                        props.room_id,
-                        authStore.user.id,
-                        nextBeforeSeq.value
-                    )
-                    if (!data) return
-
-                    messages.value = [...data.messages.slice().reverse(), ...messages.value]
-                    nextBeforeSeq.value = data.next_before_seq
-
-                    await nextTick()
-                    el.scrollTop += el.scrollHeight - oldHeight
-                } finally {
-                    loadingOlder = false
-                }
-            }
-
-            function handleSocketMessage(event) {
-                let data
-
-                try {
-                    data = JSON.parse(event.data)
-                } catch (error) {
-                    console.error("Invalid Websocket message", error)
-                }
-
-                if (data.room_id != props.room_id) return
-
-                if (data.type == 'new_message') onNewMessage(data)
-                if (data.type == 'message_updated') applyMessageUpdate(data)
-                if (data.type == 'message_deleted') applyMessageDelete(data)
-                if (data.type == 'error') console.warn("WebSocket error", data.error)
-            }
-
-            function applyMessageUpdate(data) {
-                const m = findMessage(data.id)
-                if (!m) return
-                m.body = data.body
-                m.edited_at = data.edited_at
-            }
-            function applyMessageDelete(data) {
-                const m = findMessage(data.id)
-                if (!m) return
-                m.body = null
-                m.deleted = true
-            }
-            async function onNewMessage(msg) {
-                if (!messages.value) return
-                if (msg.seq <= lastSeq.value) return
-                
-                const wasAtBottom = isAtBottom()
-                messages.value.push(msg)
-                lastSeq.value = msg.seq
-
-                await nextTick()
-                if (wasAtBottom) scrollToBottom()
-                markReadSoon()
-            }
-
-            let activeSocket = null
-            onMounted(async () => {
-                document.addEventListener('keydown', handleKeydown)
-                document.addEventListener('visibilitychange', markReadSoon)
-                document.addEventListener('click', closeMessageMenu)
-                document.addEventListener('keydown', closeMessageMenu)
-
-                await loadRoomDetails()
-                await loadInitial()
-                await nextTick()
-                scrollToBottom()
-                markReadSoon()
-
-                activeSocket = roomsStore.socket
-                if (activeSocket) {
-                    activeSocket.addEventListener(
-                        'message',
-                        handleSocketMessage
-                    )
-                }
-            })
-
-            onBeforeUnmount(async () => {
-                clearTimeout(readTimer)
-                clearTimeout(leaveTimer)
-                document.removeEventListener('keydown', handleKeydown)
-                document.removeEventListener('visibilitychange', markReadSoon)
-                document.removeEventListener('click', closeMessageMenu)
-                document.removeEventListener('keydown', closeMessageMenu)
-                if (activeSocket) {
-                    activeSocket.removeEventListener(
-                        'message',
-                        handleSocketMessage
-                    )
-                }
-
-                await roomsStore.getUserRooms()
-            })
-
-            return {
-                room,
-                messages,
-                authStore,
-                isMyMessage,
-                sendMessage,
-                draft,
-                submit,
-                messageLogRef,
-                markReadSoon,
-                onScroll,
-                contextMenu,
-                openMessageMenu,
-                handleDeleteMessage,
-                editingMessageId,
-                editDraft,
-                startEditMessage,
-                saveEditedMessage,
-                cancelEditMessage,
-                isLeaving,
+                cancelEditMessage()
+            } catch (error) {
+                console.error('Failed to edit message:', error)
             }
         }
+
+        function openMessageMenu(event, message) {
+            const menuWidth = 170
+            const menuHeight = 55
+
+            contextMenu.value = {
+                visible: true,
+                x: Math.min(event.clientX, window.innerWidth - menuWidth - 8),
+                y: Math.min(event.clientY, window.innerHeight - menuHeight - 8),
+                message
+            }
+        }
+
+        function closeMessageMenu() {
+            contextMenu.value.visible = false
+        }
+
+        async function handleDeleteMessage() {
+            const message = contextMenu.value.message
+
+            closeMessageMenu()
+
+            if (!message) return
+            if (message.sender.id != authStore.user.id) return
+
+            await deleteMessage(message.id)
+        }
+
+        async function deleteMessage(messageId) {
+            await messagesStore.deleteMessage(props.room_id, messageId)
+        }
+        async function editMessage(messageId, newMessage) {
+            const res = await messagesStore.editMessage(messageId, props.room_id, newMessage)
+            if (!(res.status == 200)) {
+                return false
+            }
+            return true
+        }
+
+        function isAtBottom(threshold = 80) {
+            const el = messageLogRef.value
+            if (!el) return false
+            return el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+        }
+
+        function onScroll() {
+            const el = messageLogRef.value
+            if (!el) return
+
+            if (el.scrollTop < 80) loadOlder()
+            markReadSoon()
+        }
+
+        function scrollToBottom() {
+            const el = messageLogRef.value
+            if (el) el.scrollTop = el.scrollHeight
+        }
+
+        async function sendRead(seq) {
+            if (seq <= lastSentRead) return
+            lastSentRead = seq
+
+            try {
+                const response = await usersStore.readMessages(props.room_id, seq)
+                if (!response.ok) {
+                    lastSentRead = 0
+                }
+            } catch {
+                lastSentRead = 0
+            }
+        }
+
+        function markReadSoon() {
+            if (document.visibilityState !== 'visible') return
+            if (!messages.value?.length || !isAtBottom()) return
+            clearTimeout(readTimer)
+            readTimer = setTimeout(() => sendRead(lastSeq.value), 500)
+        }
+
+        function sendMessage(text) {
+            if (!roomsStore.socket || roomsStore.socket.readyState !== WebSocket.OPEN) {
+                console.warn('Socket not connected')
+                return false
+            }
+
+            roomsStore.socket.send(JSON.stringify({
+                room_id: props.room_id,
+                body: text,
+            }))
+            return true
+        }
+        function submit() {
+            const text = draft.value.trim()
+            if (!text) return
+            if (sendMessage(text)) draft.value = ''
+        }
+
+        function findMessage(id) {
+            return messages.value.find(m => m.id === id)
+        }
+        function handleKeydown(event) {
+            if (event.key !== 'Escape') return
+
+            if (editingMessageId.value !== null) {
+                cancelEditMessage()
+                return
+            }
+
+            if (isLeaving.value) return
+
+            isLeaving.value = true
+
+            leaveTimer = setTimeout(() => {
+                router.push('/')
+            }, 250)
+        }
+        
+        function isMyMessage(m) {
+            if (!m) return false;
+            const senderId = m.sender?.id ?? m.sender_id ?? m.sender;
+            return senderId == authStore.user.id;
+        }
+
+        async function loadRoomDetails() {
+            const res = await roomsStore.getRoomDetails(props.room_id, authStore.user.id)
+            room.value = res?.status == 'success' ? res.room : res
+        }
+        async function loadInitial() {
+            const data = await messagesStore.getRoomMessages(props.room_id, authStore.user.id, null)
+            if (!data) {
+                return
+            }
+            messages.value = data.messages.slice().reverse()
+            nextBeforeSeq.value = data.next_before_seq
+            lastSeq.value = messages.value.at(-1)?.seq ?? 0
+
+            await nextTick()
+        }
+
+        async function loadOlder() {
+            if (loadingOlder) return
+            if (nextBeforeSeq.value === null) return
+            const el = messageLogRef.value
+            if (!el) return
+
+            loadingOlder = true
+            const oldHeight = el.scrollHeight
+
+            try {
+                const data = await messagesStore.getRoomMessages(
+                    props.room_id,
+                    authStore.user.id,
+                    nextBeforeSeq.value
+                )
+                if (!data) return
+
+                messages.value = [...data.messages.slice().reverse(), ...messages.value]
+                nextBeforeSeq.value = data.next_before_seq
+
+                await nextTick()
+                el.scrollTop += el.scrollHeight - oldHeight
+            } finally {
+                loadingOlder = false
+            }
+        }
+
+        function handleSocketMessage(event) {
+            let data
+
+            try {
+                data = JSON.parse(event.data)
+            } catch (error) {
+                console.error("Invalid Websocket message", error)
+            }
+
+            if (data.room_id != props.room_id) return
+
+            if (data.type == 'new_message') onNewMessage(data)
+            if (data.type == 'message_updated') applyMessageUpdate(data)
+            if (data.type == 'message_deleted') applyMessageDelete(data)
+            if (data.type == 'error') console.warn("WebSocket error", data.error)
+        }
+
+        function applyMessageUpdate(data) {
+            const m = findMessage(data.id)
+            if (!m) return
+            m.body = data.body
+            m.edited_at = data.edited_at
+        }
+        function applyMessageDelete(data) {
+            const m = findMessage(data.id)
+            if (!m) return
+            m.body = null
+            m.deleted = true
+        }
+        async function onNewMessage(msg) {
+            if (!messages.value) return
+            if (msg.seq <= lastSeq.value) return
+            
+            const wasAtBottom = isAtBottom()
+            messages.value.push(msg)
+            lastSeq.value = msg.seq
+
+            await nextTick()
+            if (wasAtBottom) scrollToBottom()
+            markReadSoon()
+        }
+
+        let activeSocket = null
+        onMounted(async () => {
+            document.addEventListener('keydown', handleKeydown)
+            document.addEventListener('visibilitychange', markReadSoon)
+            document.addEventListener('click', closeMessageMenu)
+            document.addEventListener('keydown', closeMessageMenu)
+
+            await loadRoomDetails()
+            await loadInitial()
+            await nextTick()
+            scrollToBottom()
+            markReadSoon()
+
+            activeSocket = roomsStore.socket
+            if (activeSocket) {
+                activeSocket.addEventListener(
+                    'message',
+                    handleSocketMessage
+                )
+            }
+        })
+
+        onBeforeUnmount(async () => {
+            clearTimeout(readTimer)
+            clearTimeout(leaveTimer)
+            document.removeEventListener('keydown', handleKeydown)
+            document.removeEventListener('visibilitychange', markReadSoon)
+            document.removeEventListener('click', closeMessageMenu)
+            document.removeEventListener('keydown', closeMessageMenu)
+
+            if (activeSocket) {
+                activeSocket.removeEventListener(
+                    'message',
+                    handleSocketMessage
+                )
+            }
+
+            await roomsStore.getUserRooms()
+        })
+
+        return {
+            room,
+            messages,
+            authStore,
+            isMyMessage,
+            sendMessage,
+            draft,
+            submit,
+            messageLogRef,
+            markReadSoon,
+            onScroll,
+            contextMenu,
+            openMessageMenu,
+            handleDeleteMessage,
+            editingMessageId,
+            editDraft,
+            startEditMessage,
+            saveEditedMessage,
+            cancelEditMessage,
+            isLeaving,
+            activeUsers,
+        }
     }
+}
 </script>
 
 <style scoped>
@@ -481,7 +480,8 @@ import { useRouter } from 'vue-router';
     display: flex;
     flex-direction: column;
     width: 100%;
-    height: 100vh;
+    height: 100%; /* Changed from 100vh to 100% so it fits inside the parent router-view */
+    min-height: 0; /* Crucial for flex child scrolling */
     background: #fdfdfd;
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -491,12 +491,7 @@ import { useRouter } from 'vue-router';
     padding: 16px 20px;
     background: #ffffff;
     border-bottom: 1px solid #eaeaea;
-}
-
-.chat-header h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    color: #333;
+    flex-shrink: 0; /* Prevents header from shrinking or stretching */
 }
 
 .message-log {
@@ -506,8 +501,19 @@ import { useRouter } from 'vue-router';
     gap: 10px;
     padding: 20px;
     overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0; /* Crucial: stops flex items from overflowing */
     background-color: #f7f9fb;
     position: relative;
+}
+
+.chat-form {
+    display: flex;
+    padding: 12px 20px;
+    background: #ffffff;
+    border-top: 1px solid #eaeaea;
+    gap: 10px;
+    flex-shrink: 0; /* Prevents input bar from squishing */
 }
 
 .empty-state {
@@ -525,11 +531,11 @@ import { useRouter } from 'vue-router';
 .message-row {
     display: flex;
     width: 100%;
-    justify-content: flex-start; /* Other users' messages on the left */
+    justify-content: flex-start;
 }
 
 .message-row.my-message {
-    justify-content: flex-end; /* Your messages on the right */
+    justify-content: flex-end;
 }
 
 .message-bubble {
@@ -551,7 +557,7 @@ import { useRouter } from 'vue-router';
     background-color: #dcf8c6;
     border-top-left-radius: 12px;
     border-top-right-radius: 2px;
-    text-align: right; /* Aligns the message text to the right for your messages */
+    text-align: right;
 }
 
 .message-bubble.deleted {
@@ -572,52 +578,50 @@ import { useRouter } from 'vue-router';
 }
 
 .sender-name.room-owner {
-  color: #9333ea;
+    color: #9333ea;
 }
 
-
 .message-context-menu {
-  position: fixed;
-  z-index: 1000;
-  min-width: 170px;
-  padding: 5px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  animation: context-menu-appear 0.12s ease-out;
+    position: fixed;
+    z-index: 1000;
+    min-width: 170px;
+    padding: 5px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    animation: context-menu-appear 0.12s ease-out;
 }
 
 .context-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  text-align: left;
-  font-size: 14px;
-  cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    text-align: left;
+    font-size: 14px;
+    cursor: pointer;
 }
 
 .delete-item {
-  color: #dc2626;
+    color: #dc2626;
 }
 
 .delete-item:hover {
-  background: #fef2f2;
+    background: #fef2f2;
 }
 
 .edit-item {
-  color: #2669dc;
+    color: #2669dc;
 }
 
 .edit-item:hover {
-  background: #fef2f2;
+    background: #fef2f2;
 }
-
 
 .message-edit {
     display: flex;
@@ -685,23 +689,20 @@ import { useRouter } from 'vue-router';
 }
 
 @keyframes context-menu-appear {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+    from {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
-
 
 .message-text {
     white-space: pre-wrap;
 }
 
-/* Metadata Styling (Time & Edited) */
 .message-meta {
     position: absolute;
     bottom: 4px;
@@ -716,7 +717,7 @@ import { useRouter } from 'vue-router';
 
 .my-message .message-meta {
     right: auto;
-    left: 10px; /* Moves timestamp to the bottom-left of the bubble for your messages, preventing text collision */
+    left: 10px;
     color: #558b55;
 }
 
@@ -759,11 +760,8 @@ import { useRouter } from 'vue-router';
     cursor: not-allowed;
 }
 
-/* Room exit animation */
 .room-leave-leave-active {
-    transition:
-        transform 250ms ease-in,
-        opacity 250ms ease-in;
+    transition: transform 250ms ease-in, opacity 250ms ease-in;
 }
 
 .room-leave-leave-to {
@@ -771,7 +769,6 @@ import { useRouter } from 'vue-router';
     opacity: 0;
 }
 
-/* Respect reduced-motion preferences */
 @media (prefers-reduced-motion: reduce) {
     .room-leave-leave-active {
         transition-duration: 0.01ms;
