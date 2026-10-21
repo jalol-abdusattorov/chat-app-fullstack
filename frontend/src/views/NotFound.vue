@@ -51,12 +51,12 @@ import { useAuthStore } from '../stores/auth';
     --saffron: #f7c948;
     --cobalt: #2f45e0;
     --cobalt-deep: #2337c2;
-    --ink: #1f2430;
-    --muted: #646c7e;
-    --line: #cdd2de;
-    --line-strong: #9aa2b6;
-    --surface: #ffffff;
-    --danger: #c4261d;
+    --ink: var(--text-primary);
+    --muted: var(--text-secondary);
+    --line: var(--border);
+    --line-strong: var(--border-strong);
+    --page-surface: var(--surface);
+    --page-danger: var(--danger);
 
     --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
     --font-body: 'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -82,7 +82,7 @@ import { useAuthStore } from '../stores/auth';
     max-width: 720px;
     margin: 0 auto;
     overflow: hidden;
-    background: var(--surface);
+    background: var(--page-surface);
     border: 1px solid var(--line);
     border-radius: 28px;
     box-shadow: 0 30px 60px -34px rgba(31, 36, 48, 0.4);
@@ -106,7 +106,7 @@ import { useAuthStore } from '../stores/auth';
     min-width: min(100%, 320px);
     max-width: 100%;
     padding: 10px 28px 10px 10px;
-    background: var(--surface);
+    background: var(--page-surface);
     border: 2px solid var(--ink);
     border-radius: 999px;
     box-shadow: 0 16px 24px -14px rgba(90, 60, 0, 0.55);
@@ -152,7 +152,7 @@ import { useAuthStore } from '../stores/auth';
     white-space: nowrap;
     font-size: 1.125rem;
     font-weight: 600;
-    text-decoration: underline wavy var(--danger);
+    text-decoration: underline wavy var(--page-danger);
     text-decoration-thickness: 1.5px;
     text-underline-offset: 6px;
 }
@@ -234,12 +234,12 @@ import { useAuthStore } from '../stores/auth';
 
 .btn--secondary {
     color: var(--ink);
-    background: var(--surface);
+    background: var(--page-surface);
     border-color: var(--line-strong);
 }
 
 .btn--secondary:hover {
-    background: #eef0f6;
+    background: var(--app-bg);
     border-color: var(--ink);
 }
 
@@ -282,5 +282,4 @@ import { useAuthStore } from '../stores/auth';
         transition: none;
     }
 }
-
 </style>

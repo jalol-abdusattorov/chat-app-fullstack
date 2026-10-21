@@ -308,13 +308,13 @@
     --saffron: #f7c948;
     --cobalt: #2f45e0;
     --cobalt-deep: #2337c2;
-    --ink: #1f2430;
-    --muted: #646c7e;
-    --line: #cdd2de;
-    --line-strong: #9aa2b6;
-    --surface: #ffffff;
-    --danger: #c4261d;
-    --danger-bg: #fdecea;
+    --ink: var(--text-primary);
+    --muted: var(--text-secondary);
+    --line: var(--border);
+    --line-strong: var(--border-strong);
+    --page-surface: var(--surface);
+    --page-danger: var(--danger);
+    --page-danger-bg: var(--danger-soft);
     --warn: #a15c00;
 
     --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
@@ -350,7 +350,7 @@
     max-width: 1040px;
     margin: 0 auto;
     overflow: hidden;
-    background: var(--surface);
+    background: var(--page-surface);
     border: 1px solid var(--line);
     border-radius: 28px;
     box-shadow: 0 30px 60px -34px rgba(31, 36, 48, 0.4);
@@ -422,7 +422,7 @@
     width: 18px;
     height: 30px;
     margin: 0 auto -16px;
-    background: #e7e9f0;
+    background: var(--surface-secondary);
     border: 2px solid var(--ink);
     border-radius: 6px;
 }
@@ -432,7 +432,7 @@
     z-index: 1;
     padding: 44px 22px 26px;
     text-align: center;
-    background: var(--surface);
+    background: var(--page-surface);
     border: 2px solid var(--ink);
     border-radius: 18px;
     box-shadow: 0 22px 30px -16px rgba(90, 60, 0, 0.55);
@@ -588,7 +588,7 @@
     height: 46px;
     padding: 0 14px;
     color: var(--ink);
-    background: var(--surface);
+    background: var(--page-surface);
     border: 1.5px solid var(--line);
     border-radius: 8px;
     font: inherit;
@@ -606,7 +606,7 @@
 }
 
 .field textarea::placeholder {
-    color: #8a91a3;
+    color: var(--text-muted);
 }
 
 .field input:hover,
@@ -676,7 +676,7 @@
 
 .toggle:hover {
     color: var(--ink);
-    background: #eef0f6;
+    background: var(--app-bg);
 }
 
 .toggle:focus-visible {
@@ -702,7 +702,7 @@
     width: 20px;
     height: 20px;
     margin: 0;
-    background: var(--surface);
+    background: var(--page-surface);
     border: 1.5px solid var(--line-strong);
     border-radius: 5px;
     cursor: pointer;
@@ -741,9 +741,9 @@
 .alert {
     margin: 0;
     padding: 10px 14px;
-    color: var(--danger);
-    background: var(--danger-bg);
-    border-left: 3px solid var(--danger);
+    color: var(--page-danger);
+    background: var(--page-danger-bg);
+    border-left: 3px solid var(--page-danger);
     border-radius: 6px;
     font-size: 0.875rem;
     font-weight: 600;
@@ -786,8 +786,8 @@
 }
 
 .submit:disabled {
-    color: #8a91a3;
-    background: #e3e6ee;
+    color: var(--text-muted);
+    background: var(--border);
     cursor: not-allowed;
 }
 
@@ -827,7 +827,7 @@
     gap: 8px;
     padding: 6px 12px;
     color: var(--muted);
-    background: #eef0f6;
+    background: var(--app-bg);
     border-radius: 999px;
     font-size: 0.8125rem;
     font-weight: 500;
@@ -904,4 +904,145 @@
     }
 }
 
+/* =========================================
+   DARK THEME OVERRIDES — POLISHED & ACCESSIBLE
+   ========================================= */
+
+:global(html[data-theme="dark"]) .page {
+    --ink: #f8fafc;
+    --muted: #94a3b8;
+    --line: #334155;
+    --line-strong: #475569;
+    --page-surface: #1e293b;
+    --cobalt: #3b82f6;
+    --cobalt-deep: #2563eb;
+}
+
+/* Fix main container in dark mode */
+:global(html[data-theme="dark"]) .shell {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.7);
+}
+
+/* Replace harsh bright yellow background with a rich dark gradient */
+:global(html[data-theme="dark"]) .intro {
+    background: linear-gradient(160deg, #1e3a8a 0%, #1e293b 100%);
+    color: #f8fafc;
+}
+
+/* Update lanyard and hanging slot colors */
+:global(html[data-theme="dark"]) .strap {
+    background: #3b82f6;
+    border-color: #0f172a;
+}
+
+:global(html[data-theme="dark"]) .clip {
+    background: #334155;
+    border-color: #0f172a;
+}
+
+:global(html[data-theme="dark"]) .slot {
+    background: #3b82f6;
+    border-color: #0f172a;
+}
+
+/* Hanging ID badge card */
+:global(html[data-theme="dark"]) .badge {
+    background: #0f172a;
+    border-color: #334155;
+    box-shadow: 0 20px 30px -15px rgba(0, 0, 0, 0.6);
+}
+
+:global(html[data-theme="dark"]) .badge-name {
+    color: #f8fafc;
+}
+
+:global(html[data-theme="dark"]) .badge-handle {
+    color: #60a5fa; /* Higher contrast light blue instead of dark blue */
+}
+
+:global(html[data-theme="dark"]) .badge-bio {
+    color: #cbd5e1;
+    border-top-color: #334155;
+}
+
+:global(html[data-theme="dark"]) .avatar {
+    background: #2563eb;
+    border-color: #0f172a;
+    color: #ffffff;
+}
+
+:global(html[data-theme="dark"]) .intro-text h2,
+:global(html[data-theme="dark"]) .intro-text p {
+    color: #f8fafc;
+}
+
+/* Form inputs & fields */
+:global(html[data-theme="dark"]) .field input,
+:global(html[data-theme="dark"]) .field textarea {
+    background: #172033;
+    color: #f8fafc;
+    border-color: #334155;
+}
+
+:global(html[data-theme="dark"]) .field input:hover,
+:global(html[data-theme="dark"]) .field textarea:hover {
+    border-color: #475569;
+}
+
+:global(html[data-theme="dark"]) .field input:focus,
+:global(html[data-theme="dark"]) .field textarea:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+}
+
+:global(html[data-theme="dark"]) .hint,
+:global(html[data-theme="dark"]) .bio-footer,
+:global(html[data-theme="dark"]) .optional {
+    color: #94a3b8;
+}
+
+:global(html[data-theme="dark"]) .toggle {
+    color: #94a3b8;
+}
+
+:global(html[data-theme="dark"]) .toggle:hover {
+    color: #f8fafc;
+    background: #334155;
+}
+
+/* Terms Checkbox */
+:global(html[data-theme="dark"]) .terms label {
+    color: #cbd5e1;
+}
+
+:global(html[data-theme="dark"]) .terms input[type="checkbox"] {
+    accent-color: #3b82f6;
+}
+
+/* Submit & Links */
+:global(html[data-theme="dark"]) .submit {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+:global(html[data-theme="dark"]) .submit:hover:not(:disabled) {
+    background: #1d4ed8;
+    box-shadow: 0 8px 20px -6px rgba(37, 99, 235, 0.5);
+}
+
+:global(html[data-theme="dark"]) .submit:disabled {
+    background: #334155;
+    color: #64748b;
+    box-shadow: none;
+}
+
+:global(html[data-theme="dark"]) .switch a {
+    color: #60a5fa;
+}
+
+:global(html[data-theme="dark"]) .switch a:hover {
+    color: #93c5fd;
+}
 </style>

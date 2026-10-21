@@ -465,8 +465,8 @@ export default {
     height: 100%;
     max-height: 100vh;
     max-height: 100dvh;
-    background: #ffffff;
-    border-right: 1px solid #eaeaea;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
     position: relative;
     overflow: hidden; /* Locks outer sidebar scroll */
     flex-shrink: 0;
@@ -494,15 +494,15 @@ export default {
     gap: 10px;
     padding: 12px 12px 12px 16px;
     margin: 12px 16px 0;
-    background-color: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background-color: var(--app-bg);
+    border: 1px solid var(--border);
     border-radius: 12px;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
     box-sizing: border-box;
 }
 
 .user-profile-card:hover {
-    border-color: #cbd5e1;
+    border-color: var(--border-strong);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
@@ -525,7 +525,7 @@ export default {
 .username-display {
     font-size: 0.9rem;
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -543,7 +543,7 @@ export default {
     border: 1px solid transparent;
     border-radius: 10px;
     background: transparent;
-    color: #64748b;
+    color: var(--text-secondary);
     cursor: pointer;
     transition:
         background-color 0.2s ease,
@@ -552,13 +552,13 @@ export default {
 }
 
 .logout-btn:hover {
-    background-color: #fef2f2;
-    color: #dc2626;
-    border-color: #fecaca;
+    background-color: var(--danger-soft);
+    color: var(--danger);
+    border-color: var(--border);
 }
 
 .logout-btn:focus-visible {
-    outline: 2px solid #2563eb;
+    outline: 2px solid var(--accent-hover);
     outline-offset: 2px;
 }
 
@@ -584,7 +584,7 @@ export default {
 .user-status-label {
     font-size: 0.72rem;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.02em;
     line-height: 1;
@@ -594,7 +594,7 @@ export default {
 .username-display {
     font-size: 0.9rem;
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -605,21 +605,21 @@ export default {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--border);
 }
 
 .rooms-title {
     margin: 0;
     font-size: 1.4rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--text-primary);
 }
 
 .chat-count-badge {
     font-size: 0.75rem;
     font-weight: 600;
-    background-color: #f3f4f6;
-    color: #4b5563;
+    background-color: var(--surface-hover);
+    color: var(--text-secondary);
     padding: 4px 8px;
     border-radius: 999px;
 }
@@ -633,8 +633,8 @@ export default {
 .sidebar-footer {
     flex-shrink: 0;
     padding: 14px 16px;
-    border-top: 1px solid #e5e7eb;
-    background-color: #ffffff;
+    border-top: 1px solid var(--border);
+    background-color: var(--surface);
 }
 
 .create-room-btn {
@@ -644,22 +644,22 @@ export default {
     gap: 12px;
     width: 100%;
     padding: 12px 16px;
-    border: 2px dashed #3b82f6;
+    border: 2px dashed var(--accent);
     border-radius: 12px;
-    background: #ffffff;
-    color: #111827;
+    background: var(--surface);
+    color: var(--text-primary);
     cursor: pointer;
     transition: background 0.2s ease, border-color 0.2s ease;
     text-align: left;
 }
 
 .create-room-btn:hover {
-    background: #f8fafc;
-    border-color: #2563eb;
+    background: var(--app-bg);
+    border-color: var(--accent-hover);
 }
 
 .create-room-btn:active {
-    background: #f1f5f9;
+    background: var(--surface-secondary);
 }
 
 .plus-icon-wrapper {
@@ -669,8 +669,8 @@ export default {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background-color: #eff6ff;
-    color: #2563eb;
+    background-color: var(--accent-soft);
+    color: var(--accent-hover);
     font-size: 1.2rem;
     font-weight: 600;
     flex-shrink: 0;
@@ -684,12 +684,12 @@ export default {
 .btn-title {
     font-size: 0.9rem;
     font-weight: 600;
-    color: #2563eb;
+    color: var(--accent-hover);
 }
 
 .btn-subtitle {
     font-size: 0.78rem;
-    color: #6b7280;
+    color: var(--text-secondary);
     margin-top: 2px;
 }
 
@@ -705,13 +705,13 @@ export default {
     margin: 0 0 6px;
     font-size: 1.5rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--text-primary);
 }
 
 .modal-heading p {
     margin: 0 0 16px;
     font-size: 0.95rem;
-    color: #6b7280;
+    color: var(--text-secondary);
 }
 
 .create-room-form {
@@ -725,7 +725,7 @@ export default {
     margin-top: 10px;
     font-size: 0.9rem;
     font-weight: 600;
-    color: #374151;
+    color: var(--text-primary);
 }
 
 .create-room-form input,
@@ -734,10 +734,10 @@ export default {
     width: 100%;
     box-sizing: border-box;
     padding: 12px 14px;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--border-strong);
     border-radius: 10px;
-    background: #ffffff;
-    color: #111827;
+    background: var(--surface);
+    color: var(--text-primary);
     font: inherit;
     font-size: 0.95rem;
     outline: none;
@@ -751,13 +751,13 @@ export default {
 .create-room-form input:focus,
 .create-room-form textarea:focus,
 .create-room-form select:focus {
-    border-color: #2563eb;
+    border-color: var(--accent-hover);
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .search-results-list {
-    background: #ffffff;
-    border: 1px solid #d1d5db;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
     border-radius: 8px;
     max-height: 150px;
     overflow-y: auto;
@@ -768,7 +768,7 @@ export default {
 .rooms-search-wrapper {
     padding: 14px 16px 10px;
     flex-shrink: 0;
-    background-color: #ffffff;
+    background-color: var(--surface);
     box-sizing: border-box;
 }
 
@@ -782,11 +782,11 @@ export default {
     padding: 0 12px;
     box-sizing: border-box;
 
-    background-color: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background-color: var(--app-bg);
+    border: 1px solid var(--border);
     border-radius: 11px;
 
-    color: #94a3b8;
+    color: var(--text-muted);
     transition:
         border-color 0.2s ease,
         background-color 0.2s ease,
@@ -794,15 +794,15 @@ export default {
 }
 
 .rooms-search-bar:hover {
-    border-color: #cbd5e1;
-    background-color: #ffffff;
+    border-color: var(--border-strong);
+    background-color: var(--surface);
 }
 
 .rooms-search-bar:focus-within {
-    background-color: #ffffff;
-    border-color: #3b82f6;
+    background-color: var(--surface);
+    border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
-    color: #2563eb;
+    color: var(--accent-hover);
 }
 
 .rooms-search-icon {
@@ -820,14 +820,14 @@ export default {
     outline: none;
     background: transparent;
 
-    color: #111827;
+    color: var(--text-primary);
     font-family: inherit;
     font-size: 0.88rem;
     font-weight: 400;
 }
 
 .rooms-search-input::placeholder {
-    color: #94a3b8;
+    color: var(--text-muted);
     opacity: 1;
 }
 
@@ -845,7 +845,7 @@ export default {
 }
 
 .search-result-item:hover {
-    background-color: #f3f4f6;
+    background-color: var(--surface-hover);
 }
 
 .user-info-display {
@@ -855,16 +855,16 @@ export default {
 
 .username-text {
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
 }
 
 .display-name-text {
     font-size: 0.78rem;
-    color: #6b7280;
+    color: var(--text-secondary);
 }
 
 .add-member-btn {
-    background: #2563eb;
+    background: var(--accent-hover);
     color: white;
     border: none;
     border-radius: 4px;
@@ -875,8 +875,8 @@ export default {
 
 .added-members-section {
     margin-top: 12px;
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
+    background: var(--surface-secondary);
+    border: 1px solid var(--border);
     border-radius: 10px;
     padding: 10px 12px;
 }
@@ -887,13 +887,13 @@ export default {
     align-items: center;
     font-size: 0.82rem;
     font-weight: 600;
-    color: #4b5563;
+    color: var(--text-secondary);
     margin-bottom: 8px;
 }
 
 .member-count-badge {
-    background-color: #eff6ff;
-    color: #2563eb;
+    background-color: var(--accent-soft);
+    color: var(--accent-hover);
     padding: 2px 6px;
     border-radius: 999px;
     font-size: 0.75rem;
@@ -911,19 +911,19 @@ export default {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: #ffffff;
-    border: 1px solid #d1d5db;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
     padding: 4px 10px 4px 4px;
     border-radius: 20px;
     font-size: 0.85rem;
-    color: #111827;
+    color: var(--text-primary);
 }
 
 .member-avatar {
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background-color: #2563eb;
+    background-color: var(--accent-hover);
     color: white;
     display: flex;
     align-items: center;
@@ -935,7 +935,7 @@ export default {
 .remove-member-btn {
     background: transparent;
     border: none;
-    color: #9ca3af;
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 1rem;
     line-height: 1;
@@ -947,7 +947,7 @@ export default {
 }
 
 .remove-member-btn:hover {
-    color: #dc2626;
+    color: var(--danger);
 }
 
 
@@ -955,10 +955,10 @@ export default {
 .form-error {
     margin: 8px 0;
     padding: 8px 12px;
-    background-color: #fef2f2;
-    border: 1px solid #fee2e2;
+    background-color: var(--danger-soft);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: #dc2626;
+    color: var(--danger);
     font-size: 0.85rem;
 }
 
@@ -980,23 +980,23 @@ export default {
 }
 
 .cancel-btn {
-    border: 1px solid #d1d5db;
-    background: #ffffff;
-    color: #374151;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text-primary);
 }
 
 .cancel-btn:hover {
-    background: #f3f4f6;
+    background: var(--surface-hover);
 }
 
 .submit-btn {
     border: none;
-    background: #2563eb;
+    background: var(--accent-hover);
     color: #ffffff;
 }
 
 .submit-btn:hover:not(:disabled) {
-    background: #1d4ed8;
+    background: var(--accent-hover);
 }
 
 .submit-btn:disabled {
@@ -1023,8 +1023,8 @@ export default {
     z-index: 5;
     flex-shrink: 0;
     padding: 4px 12px 4px;
-    background: #ffffff;
-    border-top: 1px solid #e5e7eb;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
     box-sizing: border-box;
     transition: padding 0.3s ease;
 }
@@ -1041,7 +1041,7 @@ export default {
     border: none;
     border-radius: 8px;
     background: transparent;
-    color: #64748b;
+    color: var(--text-secondary);
     cursor: pointer;
     transition:
         background-color 0.2s ease,
@@ -1049,12 +1049,12 @@ export default {
 }
 
 .drawer-arrow-toggle:hover {
-    background: #eff6ff;
-    color: #2563eb;
+    background: var(--accent-soft);
+    color: var(--accent-hover);
 }
 
 .drawer-arrow-toggle:focus-visible {
-    outline: 2px solid #3b82f6;
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
 
@@ -1085,8 +1085,8 @@ export default {
     padding: 12px;
     border: 1px dashed #93c5fd;
     border-radius: 12px;
-    background: #f8fbff;
-    color: #111827;
+    background: var(--surface-secondary);
+    color: var(--text-primary);
     cursor: pointer;
     text-align: left;
     box-sizing: border-box;
@@ -1096,8 +1096,8 @@ export default {
 }
 
 .create-room-btn:hover {
-    background: #eff6ff;
-    border-color: #3b82f6;
+    background: var(--accent-soft);
+    border-color: var(--accent);
 }
 
 .create-room-btn .btn-text-container {
@@ -1113,5 +1113,27 @@ export default {
 
 .create-room-drawer.drawer-collapsed {
     padding-bottom: 0px;
+}
+.sidebar-wrapper {
+    background: var(--surface);
+    color: var(--text-primary);
+    border-color: var(--border);
+}
+
+.sidebar-header {
+    background: var(--surface);
+    border-color: var(--border);
+}
+
+.room-item:hover {
+    background: var(--surface-hover);
+}
+
+.room-name {
+    color: var(--text-primary);
+}
+
+.room-last-message {
+    color: var(--text-secondary);
 }
 </style>

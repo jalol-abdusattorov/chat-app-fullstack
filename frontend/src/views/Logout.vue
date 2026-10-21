@@ -72,8 +72,8 @@ export default {
 
 /* Central Card */
 .logout-card {
-    background-color: #ffffff;
-    border: 1px solid #e5e7eb;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
     padding: 36px 32px;
     border-radius: 16px;
     box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05);
@@ -86,8 +86,8 @@ export default {
 .icon-wrapper {
     width: 64px;
     height: 64px;
-    background-color: #fef2f2;
-    color: #ef4444;
+    background-color: var(--danger-soft);
+    color: var(--danger);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -100,13 +100,13 @@ export default {
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 1.35rem;
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
 }
 
 .logout-subtitle {
     margin: 0 0 28px 0;
     font-size: 0.95rem;
-    color: #6b7280;
+    color: var(--text-secondary);
     line-height: 1.5;
 }
 
@@ -134,20 +134,19 @@ export default {
 
 /* Primary Destructive Action */
 .btn-confirm {
-    background-color: #ef4444;
+    background-color: var(--danger);
     color: #ffffff;
 }
 .btn-confirm:hover {
-  background-color: #dc2626;    
+  background-color: var(--danger);    
 }
 
 /* Secondary Cancel Action */
 .btn-cancel {
-    background-color: #f3f4f6;
-    color: #374151;
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
 }
 .btn-cancel:hover {
-    background-color: #e5e7eb;
+    background-color: var(--surface-secondary);
 }
-
 </style>

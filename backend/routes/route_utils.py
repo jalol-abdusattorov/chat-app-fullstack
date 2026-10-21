@@ -1,4 +1,5 @@
 from bson import ObjectId
+import bson
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPBearer
 
@@ -12,10 +13,13 @@ def check_owner(request: Request, user_id: str):
         raise HTTPException(status_code=403, detail="Permission denied, not the owner of the account")
 
 def has_user_joined_the_room(user_id: str, room_id: str) -> bool:
-    return room_members_collection.find_one(
-        { "room_id": ObjectId(room_id), "user_id": ObjectId(user_id) },
-        { "_id": 1} ,
-    ) is not None
+    try:
+        return room_members_collection.find_one(
+            { "room_id": ObjectId(room_id), "user_id": ObjectId(user_id) },
+            { "_id": 1} ,
+        ) is not None
+    except bson.errors.InvalidId:
+        return False
 
 def get_room_last_message(room_id: ObjectId, user_id: ObjectId):
     if type(room_id) == str:

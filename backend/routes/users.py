@@ -243,6 +243,11 @@ def search_user_by_username(
     username: str,
     current_user_id: str = Depends(get_current_user_id),
 ):
+    try:
+        current_uid = ObjectId(current_user_id)
+    except bson.errors.InvalidId:
+        raise invalid_id_exception
+
     # "Removes" some of the punctuations in order to not crash MongoDB (e.g. user types "bo@b" -> "bo\@b")
     clean_username = re.escape(username.strip())
 
@@ -255,6 +260,9 @@ def search_user_by_username(
                 "username": {
                     "$regex": clean_username,
                     "$options": "i"
+                },
+                "_id": {
+                    "$ne": current_uid
                 }
             }
         ]

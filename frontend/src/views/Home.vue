@@ -162,5 +162,4 @@ export default {
     .main-chat-layout {
         width: 100%;
     }
-}
-</style>
+}</style>

@@ -206,34 +206,34 @@ export default {
     align-items: center;
     padding: 12px 16px;
     gap: 12px;
-    background-color: #ffffff;
+    background-color: var(--surface);
     cursor: pointer;
     transition: all 0.2s ease;
     width: 100%;
     box-sizing: border-box;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--border);
     position: relative;
 }
 
 .chat-room-item:hover {
-    background-color: #f8fafc;
+    background-color: var(--app-bg);
 }
 
 .chat-room-item.is-selected {
-    background-color: #eff6ff;
-    border-left: 4px solid #3b82f6;
+    background-color: var(--accent-soft);
+    border-left: 4px solid var(--accent);
     padding-left: 12px;
 }
 
 .chat-room-item.not-member {
-    background-color: #fafafa;
+    background-color: var(--surface-secondary);
 }
 
 .room-avatar {
     width: 46px;
     height: 46px;
     border-radius: 50%;
-    background-color: #e0e7ff;
+    background-color: var(--accent-soft);
     color: #4f46e5;
     display: flex;
     align-items: center;
@@ -259,7 +259,7 @@ export default {
     margin: 0;
     font-size: 0.95rem;
     font-weight: 600;
-    color: #111827;
+    color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -271,7 +271,7 @@ export default {
 
 .room-time {
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: var(--text-muted);
     flex-shrink: 0;
     margin-left: 8px;
 }
@@ -286,7 +286,7 @@ export default {
 .message-text {
     margin: 0;
     font-size: 0.85rem;
-    color: #6b7280;
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -294,17 +294,17 @@ export default {
 }
 
 .sender-name {
-    color: #374151;
+    color: var(--text-primary);
     font-weight: 500;
 }
 
 .empty-room {
     font-style: italic;
-    color: #9ca3af;
+    color: var(--text-muted);
 }
 
 .unread-badge {
-    background-color: #3b82f6;
+    background-color: var(--accent);
     color: white;
     font-size: 0.75rem;
     font-weight: 600;
@@ -316,18 +316,18 @@ export default {
 }
 
 .has-unread .room-name {
-    color: #111827;
+    color: var(--text-primary);
     font-weight: 700;
 }
 
 .has-unread .message-text {
-    color: #1f2937;
+    color: var(--text-primary);
     font-weight: 600;
 }
 
 /* Join Button Style */
 .join-room-btn {
-    background-color: #3b82f6;
+    background-color: var(--accent);
     color: white;
     border: none;
     font-size: 0.8rem;
@@ -340,11 +340,11 @@ export default {
 }
 
 .join-room-btn:hover {
-    background-color: #2563eb;
+    background-color: var(--accent-hover);
 }
 
 .join-room-btn:disabled {
-    background-color: #9ca3af;
+    background-color: var(--text-muted);
     cursor: not-allowed;
     opacity: 0.7;
 }
@@ -353,7 +353,7 @@ export default {
 .leave-room-btn {
     background: transparent;
     border: none;
-    color: #9ca3af;
+    color: var(--text-muted);
     font-size: 1.25rem;
     line-height: 1;
     cursor: pointer;
@@ -372,8 +372,8 @@ export default {
 }
 
 .leave-room-btn:hover {
-    background-color: #fee2e2;
-    color: #dc2626;
+    background-color: var(--danger-soft);
+    color: var(--danger);
 }
 
 /* Modal Custom Layout Styles */
@@ -381,13 +381,13 @@ export default {
     margin: 0;
     font-size: 1.25rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--text-primary);
 }
 
 .modal-desc {
     margin: 0 0 8px;
     font-size: 0.95rem;
-    color: #4b5563;
+    color: var(--text-secondary);
     line-height: 1.5;
 }
 
@@ -409,22 +409,22 @@ export default {
 }
 
 .cancel-btn {
-    border: 1px solid #d1d5db;
-    background: #ffffff;
-    color: #374151;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text-primary);
 }
 
 .cancel-btn:hover {
-    background: #f3f4f6;
+    background: var(--surface-hover);
 }
 
 .confirm-leave-btn {
     border: none;
-    background: #dc2626;
+    background: var(--danger);
     color: #ffffff;
 }
 
 .confirm-leave-btn:hover {
-    background: #b91c1c;
+    background: var(--danger);
 }
 </style>

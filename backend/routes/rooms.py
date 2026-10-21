@@ -257,12 +257,8 @@ def create_room(
 @router.get("/rooms/{room_id}")
 def get_room_details(
     room_id: str,
-    user_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    user_id: str = Depends(get_current_user_id),
 ):
-    check_owner(request, user_id)
-
     try:
         rid = ObjectId(room_id)
         uid = ObjectId(user_id)
@@ -307,7 +303,7 @@ def get_room_details(
     room['owner_id'] = str(room['owner_id'])
 
     return {
-        'status': 'success',
+        'ok': True,
         'room': room
     }
 
@@ -477,13 +473,9 @@ def search_rooms(
 @router.post("/room/{room_id}/add-people")
 def add_people(
     room_id: str,
-    user_id: str,
     adding_users: AddUsersRequest,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    user_id: str = Depends(get_current_user_id),
 ):
-    check_owner(request, user_id)
-
     try:
         rid = ObjectId(room_id)
         uid = ObjectId(user_id)
@@ -497,23 +489,23 @@ def add_people(
 
     room_member = room_members_collection.find_one({ "room_id": rid, "user_id": uid })
     if room_member['role'] != 'owner':
-        raise
+        raise HTTPException(status_code=403, detail="Permission denied")
 
     result = add_people_to_room(candidate_uids, rid)
 
-    return result
+    return {
+        "ok": True,
+        "result": result
+    }
 
 
 # AUTHORIZED AND OWNER CHECK
 @router.delete("/room/{room_id}/kick")
 def kick_person(
     room_id: str,
-    user_id: str,
     kicking_user_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    user_id: str = Depends(get_current_user_id),
 ):
-    check_owner(request, user_id)
 
     try:
         rid = ObjectId(room_id)
@@ -545,7 +537,7 @@ def kick_person(
 
     del_count = room_members_collection.delete_one({ "_id": kicking_user['_id'] }).deleted_count
     return {
-        'status': 'success',
+        'ok': True,
         'deleted_docs': del_count,
     }
 
@@ -590,9 +582,11 @@ def remove_people(
 @router.get("/room/{room_id}/members")
 def get_room_members(
     room_id: str,
-    request: Request,
-    _: Annotated[str, Depends(swagger_bearer_scheme)]
+    user_id: str = Depends(get_current_user_id)
 ):
+    if not has_user_joined_the_room(user_id, room_id):
+        raise HTTPException(status_code=403, detail="User hasn't joined the room")
+
     try:
         rid = ObjectId(room_id)
     except bson.errors.InvalidId:
@@ -600,13 +594,23 @@ def get_room_members(
 
     cursor = room_members_collection.find({ "room_id": rid })
     room_members = list(cursor)
+    user_ids = [doc['user_id'] for doc in room_members]
+    cursor = users_collection.find(
+        { "_id": { "$in": user_ids } },
+        { "display_name": 1, "username": 1 }
+    )
+    result = list(cursor)
+    users_map = {user['_id']: user for user in result}
 
-    for room_member in room_members:
-        room_member['_id'] = str(room_member['_id'])
-        room_member['room_id'] = str(room_member['room_id'])
-        room_member['user_id'] = str(room_member['user_id'])
+    for member in room_members:
+        member['display_name'] = users_map.get(member['user_id'], {}).get('display_name', 'Deleted user')
+        member['username'] = users_map.get(member['user_id'], {}).get('username', 'Deleted user')
+        member['_id'] = str(member['_id'])
+        member['user_id'] = str(member['user_id'])
+        member['room_id'] = str(member['room_id'])
 
     return {
+        'ok': True,
         'member_count': len(room_members),
         'members': room_members
     }
@@ -644,15 +648,18 @@ class RoomConnectionManager:
         if room_id not in self.active_connections:
             self.active_connections[room_id] = { websocket: user_id }
         else:
-            if user_id not in self.active_connections[room_id].values():
+            if not websocket in self.active_connections[room_id]:
                 self.active_connections[room_id][websocket] = user_id
 
         return True
 
-    async def broadcast_to_room(self, room_id: str, payload: dict):
+    async def broadcast_to_room(self, room_id: str, payload: dict, exclude_ws: WebSocket | None = None):
         dead_cons = []
         sended_cons = []
         for connection in list(self.active_connections.get(room_id, [])):
+            if connection == exclude_ws:
+                continue
+
             try:
                 await connection.send_json(payload)
                 sended_cons.append(connection)
@@ -755,6 +762,41 @@ async def websocket(
                     'type': 'subscribed',
                     'room_id': room_id
                 })
+            elif event_type == 'typing':
+                if not user_id:
+                    await websocket.send_json({
+                        "type": 'error',
+                        'error': 'user_id_missing'
+                    })
+                    continue
+
+                if not manager.is_user_a_member(user_id, room_id):
+                    await websocket.send_json({
+                        "type": "error",
+                        "error": "user_not_in_room"
+                    })
+                    continue
+
+                is_typing = data.get('is_typing')
+
+                sender = users_collection.find_one(
+                    { "_id": uid }, { "username": 1, "display_name": 1 }
+                )
+
+                typing_payload = {
+                    "type": "typing",
+                    "room_id": room_id,
+                    "user_id": user_id,
+                    "is_typing": is_typing,
+                    "user": {
+                        "id": user_id,
+                        "username": sender.get("username") if sender else None,
+                        "display_name": sender.get("display_name") if sender else "User",
+                    }
+                }
+
+                # Broadcast to all room members except the sender
+                await manager.broadcast_to_room(room_id, typing_payload, exclude_ws=websocket)
 
             else:
                 if not has_user_joined_the_room(user_id, room_id):

@@ -37,12 +37,12 @@ export const useRoomsStore = defineStore('roomsStore', () => {
         }
     }
 
-    async function getRoomDetails(roomId, userId) {
+    async function getRoomDetails(roomId) {
         loading.value = true
         error.value = null
 
         try {
-            const response = await api.get(`/rooms/${roomId}`, { params: { user_id: userId } })
+            const response = await api.get(`/rooms/${roomId}`)
             const data = response.data
 
             return data
@@ -159,6 +159,64 @@ export const useRoomsStore = defineStore('roomsStore', () => {
         }
     }
 
+    async function getRoomMembers(roomId) {
+        loading.value = true
+        error.value = null
+
+        try {
+            const response = await api.get(`/room/${roomId}/members`)
+            const data = response.data
+
+            return data
+        } catch (exc) {
+            error.value = 
+                exc.response?.data?.detail ||
+                exc.response?.data?.message ||
+                "Failed"
+            throw exc
+        } finally {
+            loading.value = false
+        }
+    }
+    async function kickUser(roomId, kickingUserId) {
+        loading.value = true
+        error.value = null
+
+        try {
+            const response = await api.delete(`/room/${roomId}/kick`, { params: { kicking_user_id: kickingUserId } })
+            const data = response.data
+
+            return data
+        } catch (exc) {
+            error.value = 
+                exc.response?.data?.detail ||
+                exc.response?.data?.message ||
+                "Failed"
+            throw exc
+        } finally {
+            loading.value = false
+        }
+    }
+    async function addMembers(roomId, addingUsers) {
+        loading.value = true
+        error.value = null
+
+        try {
+            const response = await api.post(`/room/${roomId}/add-people`, { users: addingUsers })
+            const data = response.data
+
+            return data
+        } catch (exc) {
+            error.value = 
+                exc.response?.data?.detail ||
+                exc.response?.data?.message ||
+                "Failed"
+            throw exc
+        } finally {
+            loading.value = false
+        }
+    }
+
     function connectSocket() {
         const authStore = useAuthStore()
         if (
@@ -198,7 +256,6 @@ export const useRoomsStore = defineStore('roomsStore', () => {
             return false
         }
         if (subscribedRooms.value.has(roomId)) { 
-            console.log("Already subscribed")
             return true
         }
 
@@ -225,5 +282,8 @@ export const useRoomsStore = defineStore('roomsStore', () => {
         connectSocket,
         subscribeToRoom,
         subscribedRooms,
+        getRoomMembers,
+        kickUser,
+        addMembers,
     }
 })

@@ -37,6 +37,7 @@ defineEmits(['close']);
     </Teleport>
 </template>
 
+
 <style scoped>
 /* Modal Base Styles */
 .modal-overlay {
@@ -53,7 +54,7 @@ defineEmits(['close']);
 }
 
 .modal-content {
-    background: #ffffff;
+    background: var(--surface);
     border-radius: 12px;
     width: min(90%, 450px);
     max-height: 90vh;
@@ -77,12 +78,12 @@ defineEmits(['close']);
     border: none;
     font-size: 1.5rem;
     cursor: pointer;
-    color: #6b7280;
+    color: var(--text-secondary);
     line-height: 1;
 }
 
 .close-btn:hover {
-    color: #111827;
+    color: var(--text-primary);
 }
 
 /* Fade Transition Styles */
