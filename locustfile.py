@@ -1,7 +1,7 @@
 import itertools
 from locust import HttpUser, task, between
 
-ROOM_ID = "6ace6629938aee17ecf07d37"
+ROOM_ID = "6adb367ecc05684c59fb60ab"
 _counter = itertools.count(1)
 
 class ChatUser(HttpUser):
