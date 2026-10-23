@@ -169,9 +169,16 @@
                         <p class="setting-value">{{ room.name || 'Private Chat' }}</p>
                     </div>
 
-                    <div class="setting-group">
+                    <div class="setting-description">
                         <label>Total Members</label>
                         <p class="setting-value">{{ room.member_count }}</p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label>Description</label>
+                        <p class="setting-value room-description-text" :class="{ 'is-empty': !room.description }">
+                            {{ room.description || "No description provided." }}
+                        </p>
                     </div>
 
                     <div class="setting-group">
@@ -720,6 +727,18 @@ export default {
             if (!(res.status == 200)) {
                 return false
             }
+
+            if (!roomsStore.socket || roomsStore.socket.readyState !== WebSocket.OPEN) {
+                console.warn('Socket not connected')
+                return false
+            }
+
+            roomsStore.socket.send(JSON.stringify({
+                type: 'message_edited',
+                room_id: props.room_id,
+                body: text,
+            }))
+
             return true
         }
 
@@ -1462,6 +1481,18 @@ export default {
     color: var(--text-secondary);
 }
 
+/* Room Leave Transition */
+.room-leave-enter-active,
+.room-leave-leave-active {
+    transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.room-leave-enter-from,
+.room-leave-leave-to {
+    opacity: 0;
+    transform: translateX(30px); /* Slides to the right as it leaves */
+}
+
 .add-members-submit {
     display: inline-flex;
     align-items: center;
@@ -1712,6 +1743,98 @@ export default {
     color: var(--text-primary);
     font: inherit;
     outline: none;
+}
+
+/* Inline Message Editing */
+.message-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.edit-input {
+    width: 100%;
+    box-sizing: border-box; /* Ensures padding doesn't push it outside the container */
+    padding: 8px 10px;
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+    outline: none;
+}
+
+.edit-input:focus {
+    border-color: var(--accent);
+}
+
+.edit-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.edit-save {
+    padding: 4px 12px;
+    background-color: var(--accent);
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.edit-save:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+}
+
+.edit-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.edit-cancel {
+    padding: 4px 12px;
+    background-color: var(--surface-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.edit-cancel:hover {
+    background-color: var(--surface-hover);
+    border-color: var(--border-strong);
+}
+
+/* Room Description Container */
+.room-description-text {
+    padding: 10px 12px;
+    background-color: var(--surface-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    word-break: break-word;
+    white-space: pre-wrap; /* Preserves line breaks if the description has multiple paragraphs */
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Fallback state when no description is provided */
+.room-description-text.is-empty {
+    color: var(--text-muted);
+    font-style: italic;
+    background-color: transparent;
+    border-style: dashed;
 }
 
 .add-members-search:focus {

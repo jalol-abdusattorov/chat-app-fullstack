@@ -79,9 +79,19 @@
             </div>
         </div>
 
-        <!-- Scrollable rooms list -->
+       <!-- Scrollable rooms container -->
         <div class="rooms-container">
             <Rooms />
+
+            <!-- Empty state when no rooms exist -->
+            <div v-if="!roomsStore.rooms || roomsStore.rooms.length === 0" class="rooms-empty-state">
+                <div class="empty-icon">💬</div>
+                <h3>You currently have no rooms</h3>
+                <p>Create a room to start chatting with others.</p>
+                <button type="button" class="create-room-action-btn" @click="openModal">
+                    Create a room
+                </button>
+            </div>
         </div>
 
         <!-- Sliding Create Room panel -->
@@ -613,6 +623,67 @@ export default {
     font-size: 1.4rem;
     font-weight: 700;
     color: var(--text-primary);
+}
+
+.rooms-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+    min-height: 100%;
+    box-sizing: border-box;
+    color: var(--text-muted);
+}
+
+.rooms-empty-state .empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+}
+
+.rooms-empty-state h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text-primary); /* Uses theme variable instead of #f1f5f9 */
+    margin: 0 0 6px 0;
+}
+
+.rooms-empty-state p {
+    font-size: 0.85rem;
+    color: var(--text-secondary); /* Uses theme variable instead of #94a3b8 */
+    margin: 0 0 20px 0;
+}
+
+.create-room-action-btn {
+    background-color: var(--accent);
+    color: #ffffff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.create-room-action-btn {
+    background-color: #6366f1;
+    color: #ffffff;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.create-room-action-btn:hover {
+    background-color: var(--accent-hover);
+}
+.create-room-action-btn:active {
+    transform: scale(0.97);
 }
 
 .chat-count-badge {

@@ -797,7 +797,8 @@ async def websocket(
 
                 # Broadcast to all room members except the sender
                 await manager.broadcast_to_room(room_id, typing_payload, exclude_ws=websocket)
-
+            elif event_type == 'message_edited':
+                pass
             else:
                 if not has_user_joined_the_room(user_id, room_id):
                     await websocket.send_json({"type": "error", "error": "user_not_in_room"})
